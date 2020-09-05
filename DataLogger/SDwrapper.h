@@ -15,17 +15,17 @@ class SDwrapper
     {
       return SD.begin(chipSelect);
     }
-    bool checkFile()
+    bool checkFile(String filename)
     {
-      return SD.exists("datalog.txt");
+      return SD.exists(filename);
     }
-    void deleteSD()
+    void deleteSD(String filename)
     {
-      SD.remove("datalog.txt");
+      SD.remove(filename);
     }
-    void readSD()
+    void printSD(String filename)
     {
-      File dataFile = SD.open("datalog.txt");
+      File dataFile = SD.open(filename);
       
       if (dataFile) {
         while (dataFile.available()) {
@@ -34,30 +34,14 @@ class SDwrapper
         dataFile.close();
       }
     }
-    void writeSD()
-    {
-      // make a string for assembling the data to log:
-      String dataString = "";
+    void writeSD(String filename, String data)
+    {    
+      File dataFile = SD.open(filename, FILE_WRITE);
     
-      // read three sensors and append to the string:
-      for (int analogPin = 0; analogPin < 3; analogPin++) {
-        int sensor = analogRead(analogPin);
-        dataString += String(sensor);
-        if (analogPin < 2) {
-          dataString += ",";
-        }
-      }
-    
-      // open the file. note that only one file can be open at a time,
-      // so you have to close this one before opening another.
-      File dataFile = SD.open("datalog.txt", FILE_WRITE);
-    
-      // if the file is available, write to it:
       if (dataFile) {
-        dataFile.println("Hello, world!");
+        dataFile.println(data);
         dataFile.close();
       }
-      // if the file isn't open, pop up an error:
       else {
         Serial.println("error opening datalog.txt");
       }
