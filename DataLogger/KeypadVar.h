@@ -9,8 +9,8 @@ char hexaKeys[ROWS][COLS] = {
   {'7','8','9'},
   {'*','0','#'}
 };
-byte rowPins[ROWS] = {A3, A4, A5, A6}; //connect to the row pinouts of the keypad
-byte colPins[COLS] = {A0, A1, A2}; //connect to the column pinouts of the keypad
+byte rowPins[ROWS] = {A4, A5, A6, A7}; //connect to the row pinouts of the keypad
+byte colPins[COLS] = {A1, A2, A3}; //connect to the column pinouts of the keypad
 
 //initialize an instance of class NewKeypad
 Keypad customKeypad = Keypad(makeKeymap(hexaKeys), rowPins, colPins, ROWS, COLS);

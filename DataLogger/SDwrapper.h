@@ -2,6 +2,10 @@
 #include <SPI.h>
 #include <SD.h>
 
+#include "SdFat.h"
+#include "FreeStack.h"
+#include "AnalogBinLogger.h"
+
 class SDwrapper
 {
   private:
