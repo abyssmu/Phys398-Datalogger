@@ -41,6 +41,11 @@ void listcmd()
   loopcmds("11# Read RTC");
   loopcmds("12# Read RTC");
 
+  loopcmds("51# Print BME");
+  loopcmds("52# Print RTC");
+  loopcmds("53# Print GPS");
+  
+  loopcmds("97# Reboot SD");
   loopcmds("98# List Cmds");
   loopcmds("*** Clear");
 }

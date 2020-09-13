@@ -101,84 +101,6 @@
 #include "FreeStack.h"
 #include "AnalogBinLogger.h"
 
-/////////////////////////// keypad parameters ///////////////////////////
-
-// keypad header file.
-#include <Keypad.h>
-
-// our keypad has four rows and three columns. since this will never change
-// while the program is runniong, declare these as constants so that they 
-// will live in flash (program code) memory instead of the much smaller
-// SRAM. 
-const byte ROWS = 4; 
-const byte COLS = 3;
-
-// keypad layout
-char keys[ROWS][COLS] = {
-{'1','2','3'},
-{'4','5','6'},
-{'7','8','9'},
-{'*','0','#'}
-};
-
-// looking down on the keyboard from above (the side with the keys), the pins are
-// numbered 1 - 8, going from left to right, though 8 is not used. 
-
-// Since I am using an Arduino Mega 2560 with a number of breakout boards, 
-// I have the following Arduino pin assignments in order to allow the column pins to 
-// generate interrupts in some future version of this program.
-byte rowPins[ROWS] = {A4, A5, A6, A7}; //connect to the row pinouts of the keypad
-byte colPins[COLS] = {A1, A2, A3}; //connect to the column pinouts of the keypad
-
-// now instantiate a Keypad object, call it kpd. Also map its pins.
-Keypad kpd = Keypad( makeKeymap(keys), rowPins, colPins, ROWS, COLS );
-
-/////////////////////////// LCD parameters ///////////////////////////
-
-// LCD library, obviously
-#include <LiquidCrystal.h>
-
-// The LCD is a GlobalFontz 16 x 2 device.
-
-// initialize the LCD library by associating LCD interface pins
-// with the arduino pins to which they are connected. first define
-// the pin numbers: reset (rs), enable (en), etc.
-const int rs = A8, en = A9, d4 = A10, d5 = A11, d6 = A12, d7 = A13;
-
-// instantiate an LCD object named "lcd" now. We can use its class
-// functions to do good stuff, e.g. lcd.print("the text").
-LiquidCrystal lcd(rs, en, d4, d5, d6, d7);
-
-// total number of characters in one line of the LCD display
-#define LCDWIDTH 16
-
-/////////////////// MCP4725 DAC (and audio) parameters ///////////////////
-
-// The MCP4725 is a 12-bit DAC that is able to update its output voltage
-// at 200 kHz, faster than the Arduino can tell it to change its output.
-// That means we can drive it as fast as the Arduino's I2C communication
-// lines can go.
-
-// the wire.h library is needed for I2C communication.
-#include <Wire.h>
-
-// Adafruit's DAC library for our device
-#include <Adafruit_MCP4725.h>
-
-// instantiate a DAC object named "dac":
-Adafruit_MCP4725 dac;
-
-// For our Adafruit MCP4725 the I2C address is 0x62
-const int DAC_I2C_addr = 0x62;
-
-// DAC output: in case we want to throttle back the maximum volume to
-// avoid saturating our speaker, define a maximum DAC output value.
-const int DACmax = 4095;
-const int DACmin = 0;
-
-// value returned by the ADC
-volatile long adc_value;
-
 /////////////////// Arduino ADC parameters ///////////////////
 
 // Analog pin number list for a sample.  Pins may be in any order and pin
@@ -266,17 +188,6 @@ char binName[13] = FILE_BASE_NAME "00.bin";
 
 // Size of file base name.  Must not be larger than six characters.
 const uint8_t BASE_NAME_SIZE = sizeof(FILE_BASE_NAME) - 1;
-
-/////////////////// Miscellaneous definitions ///////////////////
-
-// Digital pin to indicate an error, set to -1 if not used.
-// The led blinks for fatal errors. The led goes on solid for SD write
-// overrun errors. On an Arduino Mega 2560, the LED is connected to pin 13.
-const int8_t ERROR_LED_PIN = 13;
-
-// SD breakour board chip select pin. We are using the Arduino's pin 53
-// to drive this.
-const uint8_t SD_CS_PIN = 53; 
 
 /////////////////// SD file buffer definitions ///////////////////
 
@@ -388,20 +299,6 @@ SdBaseFile binFile;
 //////////////////////////////////////////////////////////////////////
 
 void setup(void) {
-
-  // set up the LCD's number of columns and rows:
-  lcd.begin(16, 2);
-
-  // Print a message to the LCD.
-  //             0123456789012345       0123456789012345
-  LCD_message(F("Physics 398DLP  "), F("Record at 32kHz "));
-
-  // delay a bit so I have time to see the display.
-  delay(1000);
-  
-  // Specify the I2C bus address used by the Adafruit MCP4725A1 12 bit DAC.
-  dac.begin(DAC_I2C_addr);
-  
   // if we will blink the LED when there are errors, tell the Arduino that
   // the pin is to be an output.
   if (ERROR_LED_PIN >= 0) {pinMode(ERROR_LED_PIN, OUTPUT);}
@@ -592,16 +489,7 @@ ISR(TIMER1_COMPB_vect) {
 ///////////////////// fatalBlink function ////////////////////////////
 //////////////////////////////////////////////////////////////////////
 
-void fatalBlink() {
-  while (true) {
-    if (ERROR_LED_PIN >= 0) {
-      digitalWrite(ERROR_LED_PIN, HIGH);
-      delay(200);
-      digitalWrite(ERROR_LED_PIN, LOW);
-      delay(200);
-    }
-  }
-}
+
 
 //////////////////////////////////////////////////////////////////////
 ///////////////////// adcInit function ///////////////////////////////

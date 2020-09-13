@@ -7,12 +7,32 @@
 
 bool CmdCenter::init()
 {
-  if (!bme.init()) error(BMEerror);
-  if (!rtc.init()) error(RTCerror);
-  if (!sd.init()) error(SDerror);
-
   lcd.begin(16, 2);
-  lcd.print("98# List Cmds");
+  lcd.print(DEFAULTTXT);
+  
+  if (!bme.init())
+  {
+    lcd.clear();
+    lcd.print("BME error.");
+    error(BMEerror);
+  }
+  if (!gps.init())
+  {
+    lcd.clear();
+    lcd.print("GPS error.");
+    error(GPSerror);
+  }
+  if (!rtc.init())
+  {
+    lcd.clear();
+    lcd.print("RTC error.");
+    error(RTCerror);
+  }
+  if (!sd.init())
+  {
+    lcd.clear();
+    lcd.print("SD error.");
+  }
 }
 
 int CmdCenter::checkCmd()
@@ -29,7 +49,12 @@ int CmdCenter::checkCmd()
   if (cmd == READALL) return 10;
   if (cmd == WRITEALL) return 11;
   if (cmd == DELETEALL) return 12;
-  
+
+  if (cmd == PRINTBME) return 51;
+  if (cmd == PRINTRTC) return 52;
+  if (cmd == PRINTGPS) return 53;
+
+  if (cmd == BOOTSD) return 97;
   if (cmd == LIST) return 98;
   int clearSize = sizeof(CLEAR) - 1;
   if (cmd.substring(cmd.length() - clearSize) == CLEAR) return 99;
@@ -61,14 +86,15 @@ void CmdCenter::getInput()
 
 void CmdCenter::loopData(String mode)
 {
-  String data = "";
+  String data = ""; //collects all data at once and then writes to sd
+  int timeDelay = 1000 / DATAPERSECOND; //time between each data collection
   
   if (mode == BMEFILE)
   {
     for(int i = 0; i < LOOPTIMES; ++i)
     {
       data += bme.collectBME();
-      delay(1000);
+      delay(timeDelay);
     }
 
     sd.writeSD(BMEFILE, data);
@@ -78,7 +104,7 @@ void CmdCenter::loopData(String mode)
     for(int i = 0; i < LOOPTIMES; ++i)
     {
       data += rtc.collectRTC();
-      delay(1000);
+      delay(timeDelay);
     }
 
     sd.writeSD(RTCFILE, data);
@@ -87,11 +113,11 @@ void CmdCenter::loopData(String mode)
   {
     for(int i = 0; i < LOOPTIMES; ++i)
     {
-      data += bme.collectBME();
-      delay(1000);
+      data += gps.collectGPS();
+      delay(timeDelay);
     }
 
-    sd.writeSD(GPSFILE, data + "GPS");
+    sd.writeSD(GPSFILE, data);
   }
   else if (mode == "all")
   {
@@ -101,13 +127,13 @@ void CmdCenter::loopData(String mode)
     {
       data += bme.collectBME();
       dataRTC += rtc.collectRTC();
-      dataGPS += bme.collectBME();
-      delay(1000);
+      dataGPS += gps.collectGPS();
+      delay(timeDelay);
     }
 
     sd.writeSD(BMEFILE, data);
     sd.writeSD(RTCFILE, dataRTC);
-    sd.writeSD(GPSFILE, dataGPS + "GPS");
+    sd.writeSD(GPSFILE, dataGPS);
   }
 }
 
@@ -179,8 +205,40 @@ bool CmdCenter::runCmd()
       cmd = "Delete ALL";
       return true;
 
+    case 51:
+      for(int i = 0; i < LOOPTIMES; ++i)
+      {
+        bme.printBME();
+        delay(1000);
+      }
+      cmd = "Print BME";
+      return true;
+
+    case 52:
+      for(int i = 0; i < LOOPTIMES; ++i)
+      {
+        rtc.printRTC();
+        delay(1000);
+      }
+      cmd = "Print RTC";
+      return true;
+
+    case 53:
+      for(int i = 0; i < LOOPTIMES; ++i)
+      {
+        gps.printGPS();
+        delay(1000);
+      }
+      cmd = "Print GPS";
+      return true;
+
+    case 97:
+      sd.init();
+      cmd = "Reboot SD";
+      return true;
+
     case 98:
-      cmd = "List cmdands";
+      cmd = "List cmds";
       delayLCD(cmd, 500);
       listcmd();
       return true;

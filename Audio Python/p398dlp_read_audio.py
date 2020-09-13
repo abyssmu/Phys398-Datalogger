@@ -69,13 +69,11 @@ locale.setlocale(locale.LC_ALL, 'en_US')
 # change the file names to suit your needs.
 
 # Here's the name of the audio file.
-textName = "test"
+textName = "Audio Bins\\test"
 filename = textName + '.bin'
-# filename = 'audio07.bin'
 
 # wav filename
 wav_filename = textName + '.wav'
-# wav_filename = 'audio07.wav'
 
 ##############################################################
 ##############################################################

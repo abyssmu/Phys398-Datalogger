@@ -1,15 +1,21 @@
 #define BMEerror 0
-#define KEYPADerror 1
-#define LCDerror 2
-#define RTCerror 3
-#define SDerror 4
+#define GPSerror 1
+#define KEYPADerror 2
+#define LCDerror 3
+#define RTCerror 4
+#define SDerror 5
 
+//Debugging error function that outputs to serial monitor
 void error(int errorCode)
 {
   switch(errorCode)
   {
     case BMEerror:
       Serial.println("BME failed to start.");
+      break;
+
+    case GPSerror:
+      Serial.println("GPS failed to start.");
       break;
 
     case KEYPADerror:
