@@ -22,13 +22,7 @@ bool CmdCenter::init()
     lcd.print("GPS error.");
     error(GPSerror);
   }
-  if (!rtc.init())
-  {
-    lcd.clear();
-    lcd.print("RTC error.");
-    error(RTCerror);
-  }
-  if (!sd.init())
+  if (!initSD())
   {
     lcd.clear();
     lcd.print("SD error.");
@@ -40,19 +34,15 @@ int CmdCenter::checkCmd()
   if (cmd == READBME) return 1;
   if (cmd == WRITEBME) return 2;
   if (cmd == DELETEBME) return 3;
-  if (cmd == READRTC) return 4;
-  if (cmd == WRITERTC) return 5;
-  if (cmd == DELETERTC) return 6;
-  if (cmd == READGPS) return 7;
-  if (cmd == WRITEGPS) return 8;
-  if (cmd == DELETEGPS) return 9;
-  if (cmd == READALL) return 10;
-  if (cmd == WRITEALL) return 11;
-  if (cmd == DELETEALL) return 12;
+  if (cmd == READGPS) return 4;
+  if (cmd == WRITEGPS) return 5;
+  if (cmd == DELETEGPS) return 6;
+  if (cmd == READALL) return 7;
+  if (cmd == WRITEALL) return 8;
+  if (cmd == DELETEALL) return 9;
 
   if (cmd == PRINTBME) return 51;
-  if (cmd == PRINTRTC) return 52;
-  if (cmd == PRINTGPS) return 53;
+  if (cmd == PRINTGPS) return 52;
 
   if (cmd == BOOTSD) return 97;
   if (cmd == LIST) return 98;
@@ -97,17 +87,7 @@ void CmdCenter::loopData(String mode)
       delay(timeDelay);
     }
 
-    sd.writeSD(BMEFILE, data);
-  }
-  else if (mode == RTCFILE)
-  {
-    for(int i = 0; i < LOOPTIMES; ++i)
-    {
-      data += rtc.collectRTC();
-      delay(timeDelay);
-    }
-
-    sd.writeSD(RTCFILE, data);
+    writeSD(BMEFILE, data);
   }
   else if (mode == GPSFILE)
   {
@@ -117,23 +97,20 @@ void CmdCenter::loopData(String mode)
       delay(timeDelay);
     }
 
-    sd.writeSD(GPSFILE, data);
+    writeSD(GPSFILE, data);
   }
   else if (mode == "all")
   {
-    String dataRTC = "";
     String dataGPS = "";
     for(int i = 0; i < LOOPTIMES; ++i)
     {
       data += bme.collectBME();
-      dataRTC += rtc.collectRTC();
       dataGPS += gps.collectGPS();
       delay(timeDelay);
     }
 
-    sd.writeSD(BMEFILE, data);
-    sd.writeSD(RTCFILE, dataRTC);
-    sd.writeSD(GPSFILE, dataGPS);
+    writeSD(BMEFILE, data);
+    writeSD(GPSFILE, dataGPS);
   }
 }
 
@@ -142,7 +119,8 @@ bool CmdCenter::runCmd()
   switch(checkCmd())
   {
     case 1:
-      sd.printSD(BMEFILE);
+      findNextFile(BMEFILE);
+      printSD(BMEFILE);
       cmd = "Read BME";
       return true;
 
@@ -152,56 +130,39 @@ bool CmdCenter::runCmd()
       return true;
 
     case 3:
-      sd.deleteSD(BMEFILE);
+      SD.remove(BMEFILE);
       cmd = "Delete BME";
       return true;
-      
+
     case 4:
-      sd.printSD(RTCFILE);
-      cmd = "Read RTC";
-      return true;
-
-    case 5:
-      loopData(RTCFILE);
-      cmd = "Write RTC";
-      return true;
-
-    case 6:
-      sd.deleteSD(RTCFILE);
-      cmd = "Delete RTC";
-      return true;
-
-    case 7:
-      sd.printSD(GPSFILE);
+      printSD(GPSFILE);
       cmd = "Read GPS";
       return true;
 
-    case 8:
+    case 5:
       loopData(GPSFILE);
       cmd = "Write GPS";
       return true;
 
-    case 9:
-      sd.deleteSD(GPSFILE);
+    case 6:
+      SD.remove(GPSFILE);
       cmd = "Delete GPS";
       return true;
 
-    case 10:
-      sd.printSD(BMEFILE);
-      sd.printSD(RTCFILE);
-      sd.printSD(GPSFILE);
+    case 7:
+      printSD(BMEFILE);
+      printSD(GPSFILE);
       cmd = "Read ALL";
       return true;
 
-    case 11:
+    case 8:
       loopData("all");
       cmd = "Write ALL";
       return true;
 
-    case 12:
-      sd.deleteSD(BMEFILE);
-      sd.deleteSD(RTCFILE);
-      sd.deleteSD(GPSFILE);
+    case 9:
+      SD.remove(BMEFILE);
+      SD.remove(GPSFILE);
       cmd = "Delete ALL";
       return true;
 
@@ -217,15 +178,6 @@ bool CmdCenter::runCmd()
     case 52:
       for(int i = 0; i < LOOPTIMES; ++i)
       {
-        rtc.printRTC();
-        delay(1000);
-      }
-      cmd = "Print RTC";
-      return true;
-
-    case 53:
-      for(int i = 0; i < LOOPTIMES; ++i)
-      {
         gps.printGPS();
         delay(1000);
       }
@@ -233,7 +185,7 @@ bool CmdCenter::runCmd()
       return true;
 
     case 97:
-      sd.init();
+      initSD();
       cmd = "Reboot SD";
       return true;
 
@@ -251,4 +203,88 @@ bool CmdCenter::runCmd()
   }
 
   return false;
+}
+
+//sd function definitions
+bool initSD()
+{
+  return SD.begin(chipSelect);
+}
+
+int findNextFile(String filename)
+{
+  File dir = SD.open("/");
+  String fCaps = filename;
+  fCaps.toUpperCase();
+  int largest = 0;
+  
+  while(true)
+  {
+    File entry = dir.openNextFile();
+    if(!entry) break;
+
+    String n = String(entry.name());
+    
+    if (n.indexOf(fCaps) != -1)
+    {
+      int txtLen = 4;
+      int numLen = 3;
+      int fileNum = n.substring(n.length() - txtLen - numLen, n.length() - txtLen).toInt();
+      
+      if(fileNum > largest)
+      {
+        largest = fileNum;
+      }
+    }
+
+    entry.close();
+  }
+
+  dir.close();
+
+  return largest + 1;
+}
+
+void printSD(String filename)
+{
+  filename += "-000.txt";
+  
+  File dataFile = SD.open(filename);
+  
+  if (dataFile) {
+    while (dataFile.available()) {
+      Serial.write(dataFile.read());
+    }
+    dataFile.close();
+  }
+}
+
+void writeSD(String filename, String data)
+{
+  int num = findNextFile(filename);
+  
+  filename += "-";
+
+  if(num < 10)
+  {
+    filename += "00" + String(num) + ".txt";
+  }
+  else if(num < 100)
+  {
+    filename += "0" + String(num) + ".txt";
+  }
+  else
+  {
+    filename += String(num) + ".txt";
+  }
+
+  File dataFile = SD.open(filename, FILE_WRITE);
+
+  if (dataFile) {
+    dataFile.println(data);
+    dataFile.close();
+  }
+  else {
+    Serial.println("error opening datalog.txt");
+  }
 }
