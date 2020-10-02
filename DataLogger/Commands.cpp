@@ -1,208 +1,4 @@
-#include <LiquidCrystal.h>
-
-#include "Commands.h"
-#include "Errors.h"
-#include "KeypadVar.h"
-#include "LCDHelper.h"
-
-/////////////////// Arduino ADC parameters ///////////////////
-
-// Analog pin number list for a sample.  Pins may be in any order and pin
-// numbers may be repeated. My version: just use A7.
-// const uint8_t PIN_LIST[ ] = {0, 1, 2, 3, 4};
-// microphone amplifier to A7.
-const uint8_t PIN_LIST[ ] = {0};
-
-// ADC sample rate in samples per second; must be 0.25 or greater.
-const float SAMPLE_RATE = 32000;
-
-// The interval between samples in seconds, SAMPLE_INTERVAL, may be set to a
-// constant instead of being calculated from SAMPLE_RATE.  SAMPLE_RATE is not
-// used in the code below.  For example, setting SAMPLE_INTERVAL = 2.0e-4
-// will result in a 200 microsecond sample interval.
-const float SAMPLE_INTERVAL = 1.0/SAMPLE_RATE;
-
-// Setting ROUND_SAMPLE_INTERVAL non-zero will cause the sample interval to
-// be rounded to a a multiple of the ADC clock period and will reduce sample
-// time jitter.
-#define ROUND_SAMPLE_INTERVAL 1
-
-// ADC prescale factor. Do not change this. 
-// The ADC takes 13 (ADC) clock cycles to perform a digitization. 
-// The prescale controls the amount of prescaling of the CPU clock 
-// to yield the (derived) ADC clock.
-#define ADC_PRESCALER 4 // F_CPU/16 1000 kHz ADC clock on a Mega 2560
-
-// ADC reference voltage.  See the processor data-sheet for reference details.
-// uint8_t const ADC_REF = 0; // External Reference AREF pin.
-// uint8_t const ADC_REF = (1 << REFS0);  // Vcc Reference.
-// uint8_t const ADC_REF = (1 << REFS1);  // Internal 1.1 (only 644 1284P Mega)
-uint8_t const ADC_REF = (1 << REFS1) | (1 << REFS0);  // Internal 2.56 on a Mega 2560
-
-// Number of analog pins to log. We're only doing A7 with this routine.
-const uint8_t PIN_COUNT = sizeof(PIN_LIST)/sizeof(PIN_LIST[0]);
-
-// Minimum ADC clock cycles per sample interval
-const uint16_t MIN_ADC_CYCLES = 15;
-
-// ADC configuration for each pin.
-uint8_t adcmux[PIN_COUNT];
-uint8_t adcsra[PIN_COUNT];
-uint8_t adcsrb[PIN_COUNT];
-uint8_t adcindex = 1;
-
-// Insure no timer events are missed.
-volatile bool timerError = false;
-volatile bool timerFlag = false;
-
-/////////////////// File definitions ///////////////////
-
-// The program creates a contiguous file with FILE_BLOCK_COUNT 512 byte blocks.
-// This file is flash erased using special SD commands.  The file will be
-// truncated if logging is stopped early.
-
-// Set the number of buffers to be written. The largest number that will actually
-// work appears to be around 2 million. This corresponds to 508 million samples,
-// or (at 32 kHz) 15,875 seconds of data, or about 4 hours and 24 minutes in a 
-// single file. Each buffer is 512 bytes, so this is about a gigabyte.
-
-// The following is actually one greater than the number of buffers.
-// 8 GB holds 15,625,000 512 word buffers, while 2GB holds 3,906,250 buffers.
-// #define MAXIMUMBUFFERSPLUSONE 631
-#define MAXIMUMBUFFERSPLUSONE 2000000
-
-const uint32_t FILE_BLOCK_COUNT = MAXIMUMBUFFERSPLUSONE;
-
-// max number of blocks to erase per erase call
-uint32_t const ERASE_SIZE = 262144L;
-
-// audio file base name.  Must be six characters or less. Files will end up with
-// names like "audio12.bin"
-#define FILE_BASE_NAME "audio"
-
-// Set RECORD_EIGHT_BITS non-zero to record only the high 8-bits of the ADC.
-// We want to use all 10 bits, so keep it zero.
-#define RECORD_EIGHT_BITS 0
-
-// Temporary log file.  Will be deleted if a reset or power failure occurs.
-#define TMP_FILE_NAME "tmp_log.bin"
-
-// Audio file base name
-char binName[13] = FILE_BASE_NAME "00.bin";
-
-// Size of file base name.  Must not be larger than six characters.
-const uint8_t BASE_NAME_SIZE = sizeof(FILE_BASE_NAME) - 1;
-
-/////////////////// Miscellaneous definitions ///////////////////
-
-// SD breakour board chip select pin. We are using the Arduino's pin 53
-// to drive this.
-const uint8_t SD_CS_PIN = 53; 
-
-/////////////////// SD file buffer definitions ///////////////////
-
-// The logger will use SdFat's buffer plus BUFFER_BLOCK_COUNT additional
-// buffers.  QUEUE_DIM must be a power of two larger than
-//(BUFFER_BLOCK_COUNT + 1).
-
-// SRAM is the kind of Arduino memory that the executing program is allowed
-// to modify. A Mega 2560 has 8 kB of SRAM. Choose the number of buffers 
-// based on the amount of available SRAM.
-
-#if RAMEND < 0X8FF
-#error Too little SRAM
-
-#elif RAMEND < 0X10FF
-// Use total of two 512 byte buffers.
-const uint8_t BUFFER_BLOCK_COUNT = 1;
-// Dimension for queues of 512 byte SD blocks.
-const uint8_t QUEUE_DIM = 4;  // Must be a power of two!
-
-#elif RAMEND < 0X20FF
-// Use total of five 512 byte buffers.
-const uint8_t BUFFER_BLOCK_COUNT = 4;
-// Dimension for queues of 512 byte SD blocks.
-const uint8_t QUEUE_DIM = 8;  // Must be a power of two!
-
-#elif RAMEND < 0X40FF
-//0X20FF = 16,639
-
-// Initially: code specified to use total of 13 512 byte buffers (6,656 bytes).
-// But that causes problems!
-
-/*
-I find that these values for BUFFER_BLOCK_COUNT and QUEUE_DIM
-cause conflicts with operating a BME680 in the same program
-as 32 kHz audio recording. 
-
-// Use total of thirteen 512 byte buffers (6,656 bytes)
-const uint8_t BUFFER_BLOCK_COUNT = 12;
-// Dimension for queues of 512 byte SD blocks.
-const uint8_t QUEUE_DIM = 16;  // Must be a power of two!
-
-*/
-
-// use the following values to avoid problems with conflicts between
-// audio recording and BME I2C operations. 4; 8
-
-// Use total of five 512 byte buffers (2,560 bytes)
-const uint8_t BUFFER_BLOCK_COUNT = 4;
-// Dimension for queues of 512 byte SD blocks.
-const uint8_t QUEUE_DIM = 8;  // Must be a power of two!
-
-#else  // RAMEND
-// Use total of 29 512 byte buffers.
-const uint8_t BUFFER_BLOCK_COUNT = 28;
-// Dimension for queues of 512 byte SD blocks.
-const uint8_t QUEUE_DIM = 32;  // Must be a power of two!
-#endif  // RAMEND
-
-/////////////////// More miscellaneous definitions ///////////////////
-
-// this stuff's obscure to me. it has to do with file I/O.
-
-#if RECORD_EIGHT_BITS
-const size_t SAMPLES_PER_BLOCK = DATA_DIM8/PIN_COUNT;
-typedef block8_t block_t;
-#else  // RECORD_EIGHT_BITS
-const size_t SAMPLES_PER_BLOCK = DATA_DIM16/PIN_COUNT;
-typedef block16_t block_t;
-#endif // RECORD_EIGHT_BITS
-
-block_t* emptyQueue[QUEUE_DIM];
-uint8_t emptyHead;
-uint8_t emptyTail;
-
-block_t* fullQueue[QUEUE_DIM];
-volatile uint8_t fullHead;  // volatile insures non-interrupt code sees changes.
-uint8_t fullTail;
-
-// queueNext assumes QUEUE_DIM is a power of two
-inline uint8_t queueNext(uint8_t ht) {
-  return (ht + 1) & (QUEUE_DIM -1);
-}
-
-/////////////// Interrupt Service Routine definitions ///////////////////
-
-// Extra cpu cycles to setup ADC with more than one pin per sample.
-const uint16_t ISR_SETUP_ADC = PIN_COUNT > 1 ? 100 : 0;
-
-// Maximum cycles for timer0 system interrupt, millis, micros.
-const uint16_t ISR_TIMER0 = 160;
-
-// Pointer to current buffer.
-block_t* isrBuf;
-
-// Need new buffer if true.
-bool isrBufNeeded = true;
-
-// overrun count
-uint16_t isrOver = 0;
-
-/////////////// instantiate file system and file objects /////////////////
-
-SdFat sd;
-SdBaseFile binFile;
+#include "Includes.h"
 
 bool CmdCenter::init()
 {
@@ -215,12 +11,6 @@ bool CmdCenter::init()
     lcd.print("BME error.");
     error(BMEerror);
   }
-  if (!gps.init())
-  {
-    lcd.clear();
-    lcd.print("GPS error.");
-    error(GPSerror);
-  }
   if (!initSD())
   {
     lcd.clear();
@@ -228,6 +18,7 @@ bool CmdCenter::init()
   }
 
   audioSetup();
+  gpsSetup();
 }
 
 int CmdCenter::checkCmd()
@@ -263,8 +54,6 @@ char CmdCenter::checkKey()
 void CmdCenter::getInput()
 {
   char keyResult = checkKey();
-
-  gps.updateTime();
   
   if (keyResult)
   {
@@ -298,7 +87,7 @@ void CmdCenter::loopData(String mode)
   {
     for(int i = 0; i < LOOPTIMES; ++i)
     {
-      data += gps.collectGPS();
+      //data += gps.collectGPS();
       delay(timeDelay);
     }
 
@@ -310,7 +99,7 @@ void CmdCenter::loopData(String mode)
     for(int i = 0; i < LOOPTIMES; ++i)
     {
       data += bme.collectBME();
-      dataGPS += gps.collectGPS();
+      //dataGPS += gps.collectGPS();
       delay(timeDelay);
     }
 
@@ -386,10 +175,9 @@ bool CmdCenter::runCmd()
       return true;
 
     case 52:
-      for(int i = 0; i < LOOPTIMES; ++i)
+      for(int i = 0; i < 10000; ++i)
       {
-        gps.printGPS();
-        delay(1000);
+        gpsLoop();
       }
       cmd = "Print GPS";
       return true;
@@ -1286,3 +1074,526 @@ void logData() {
   Serial.println(overruns);
   Serial.println(F("Done"));
 }
+
+void gpsSetup () {
+
+  // fire up the serial monitor
+  Serial.begin(115200);
+  while(!Serial){};
+  
+  Serial.println("Let's set the DS3231 real time clock from the GPS after acquiring satellites.");
+
+  // declare the GPS PPS pin to be an Arduino input 
+  pinMode(GPS_PPS_pin, INPUT);
+
+  // initialize a flag and some counters
+  good_RTC_time_from_GPS_and_satellites = false;
+  consecutive_good_sets_so_far = 0;
+  i_am_so_bored = 0;
+
+  // 9600 NMEA is the default communication and baud rate for Adafruit MTK 3339 chipset GPS 
+  // units. NMEA is "National Marine Electronics Association." 
+  // Note that this serial communication path is different from the one driving the serial 
+  // monitor window on your laptop.
+  GPS.begin(9600);
+
+  // initialize a flag holding the GPS PPS pin status: this pin pulses positive as soon as 
+  // the seconds value rolls to the next second.
+  GPS_PPS_value_old = 0;
+    
+  // turn off most GPS outputs to reduce the rate of stuff coming at us.
+  GPS.sendCommand(PMTK_DATE_TIME_ONLY);
+
+  // Set the update rate to once per second. 
+  GPS.sendCommand(PMTK_SET_NMEA_UPDATE_1HZ); 
+
+  // Send a synch-with-PPS command to the GPS in hopes of having a deterministic
+  // relationship between the PPS line lighting up and the GPS reporting data to us. According
+  // to the manufacturer, the GPS will start snding us a date/time data sentence about 170
+  // milliseconds after the PPS line transitions fom 0 to 1. 
+  GPS.sendCommand(PMTK_SET_SYNC_PPS_NMEA);
+  
+  // this keeps track of where in the string of characters of a GPS data sentence we are.
+  GPS_command_string_index = 0;
+
+  // more initialization
+  sentence_has_a_Z = false;
+
+  time_to_quit = false;
+
+  // fire up the RTC.
+  Serial.print("Fire up the RTC. return code is "); 
+  int return_code = rtc.begin();
+  Serial.println(rtc.begin());
+
+  // problems?
+  if(!return_code) {
+    Serial.println("RTC wouldn't respond so bail out.");
+    while (1) {};
+  }
+
+  // now try read back the RTC to check.       
+  delay(500);
+  
+  now = rtc.now();
+  Serial.print("Now read back the RTC to check during setup. ");
+  Serial.print(now.hour(), DEC);
+  Serial.print(':');
+  if(now.minute() < 10)   Serial.print(0);
+  Serial.print(now.minute(), DEC);
+  Serial.print(':');
+  if(now.second() < 10)   Serial.print(0);
+  Serial.print(now.second(), DEC);
+
+  Serial.print("   Date (dd/mm/yyyy): ");
+  Serial.print(now.day(), DEC); Serial.print('/');
+  if(int(now.month()) < 10) Serial.print("0");
+  Serial.print(now.month(), DEC); Serial.print("/");
+  Serial.println(now.year(), DEC);
+  
+  // set up the LCD's number of columns and rows:
+  lcd.begin(16, 2);
+
+  // Print a message to the LCD.
+  lcd.setCursor(0, 0);
+  lcd.print("Now looking for ");
+  lcd.setCursor(0, 1);
+  lcd.print("GPS satellites  ");
+}
+
+/////////////////////////////////////////////////////////////////////////
+
+void gpsLoop () {
+
+  // ******************************************************************************
+  /*
+
+  First things first: check to see if we are we done setting the RTC. In order to 
+  declare victory and exit, we'll need the following to happen. 
+
+  Definitions:
+
+    t_GPS_read    system time from millis() at which the most recent GPS date/time
+                  sentence was completely parsed BEFORE the most recent PPS 0 -> 1 
+                  transition was detected 
+                      
+    t_bump_go     system time from millis() at which the proposed bumped-by-1-second
+                  time is ready for downloading to the RTC
+    
+    t_GPS_PPS     system time from millis() at which the most recent 0 -> 1 
+                  transition on the GPS's PPS pin is detected
+
+    t_RTC_update  system time from millis() at which the RTC time load is done 
+
+  Typical timing for an event:   
+
+    t_GPS_read    17,961    
+    t_bump_go     17,971 (t_GPS_read +  10 ms)    
+    t_GPS_PPS     18,597 (t_bump_go  + 626 ms)    
+    t_RTC_update  18,598 (t_GPS_PPS  +   1 ms)
+
+  Every once in a while we might miss the PPS 0 -> 1 transition, or the GPS might 
+  not feed us a data sentence. So let's impose the following criteria.
+
+  0 ms   <= t_RTC_update - t_GPS_PPS  <= 10 ms
+  200 ms <= t_GPS_PPS - t_bump_go     <= 800 ms
+  0 ms   <= t_bump_go - t_GPS_read    <= 50 ms
+  400 ms <= t_RTC_update - t_GPS_read <= 1000 ms
+
+  */
+
+  if(time_to_quit) {
+
+    // print a message to the serial monitor, but only once.
+    if (i_am_so_bored == 0) Serial.print("\n\nTime to quit! We have set the RTC.");
+
+    // Print a message to the LCD each pass through, updating the time.
+    lcd.setCursor(0, 0);
+    //         0123456789012345
+    lcd.print("RTC is now set  ");
+
+    // blank the LCD's second line 
+    lcd.setCursor(0, 1);
+    lcd.print("                ");
+
+    // print the time
+    lcd.setCursor(0, 1);
+    now = rtc.now();
+    
+    if(now.hour() < 10)   lcd.print(0);
+    lcd.print(now.hour(), DEC);
+    
+    lcd.print(':');
+    if(now.minute() < 10)   lcd.print(0);
+    lcd.print(now.minute());
+    
+    lcd.print(':');
+    if(now.second() < 10)   lcd.print(0);
+    lcd.print(now.second());
+
+    delay(50);
+
+    // increment a counter
+    i_am_so_bored++;
+
+    return;
+  }
+
+  // *******************************************************************************
+
+  // now check to see if we just got a PPS 0 -> 1 transition, indicating that the
+  // GPS clock has just ticked over to the next second.
+  GPS_PPS_value = digitalRead(GPS_PPS_pin);
+  
+  // did we just get a 0 -> 1 transition?
+  if (GPS_PPS_value == 1 && GPS_PPS_value_old == 0) {
+    
+    Serial.print("\nJust saw a PPS 0 -> 1 transition at time (ms) = ");
+    t_GPS_PPS = millis();
+    Serial.println(t_GPS_PPS);
+
+    // load the previously established time values into the RTC now.
+    if (good_RTC_time_from_GPS_and_satellites) {
+
+      // now set the real time clock to the bumped-by-one-second value that we have 
+      // already calculated. To set the RTC with an explicit date & time, for example 
+      // January 21, 2014 at 3am you would call
+      // rtc.adjust(DateTime(2014, 1, 21, 3, 0, 0));
+    
+      rtc.adjust(DateTime(int(RTC_year_bumped), int(RTC_month_bumped), int(RTC_day_bumped), int(RTC_hour_bumped), 
+        int(RTC_minutes_bumped), int(RTC_seconds_bumped)));
+
+      // take note of when we're back from setting the real time clock:
+      t_RTC_update = millis();
+
+      // Serial.print("Just returned from updating RTC at system t = "); Serial.println(t_RTC_update);
+
+      Serial.print("Proposed new time fed to the RTC was ");
+      Serial.print(RTC_hour_bumped, DEC); Serial.print(':');
+      if(RTC_minutes_bumped < 10) Serial.print("0");
+      Serial.print(RTC_minutes_bumped, DEC); Serial.print(':');
+      if(RTC_seconds_bumped < 10) Serial.print("0");
+      Serial.print(RTC_seconds_bumped, DEC); 
+      Serial.print("   Date (dd/mm/yyyy): ");
+      Serial.print(RTC_day_bumped, DEC); Serial.print('/');
+      if(RTC_month_bumped < 10) Serial.print("0");
+      Serial.print(RTC_month_bumped, DEC); Serial.print("/");
+      Serial.println(RTC_year_bumped, DEC);  
+
+      // now read back the RTC to check.       
+      now = rtc.now();
+      Serial.print("Now read back the RTC to check. ");
+      Serial.print(now.hour(), DEC);
+      Serial.print(':');
+      if(now.minute() < 10)   Serial.print(0);
+      Serial.print(now.minute(), DEC);
+      Serial.print(':');
+      if(now.second() < 10)   Serial.print(0);
+      Serial.print(now.second(), DEC);
+
+      Serial.print("   Date (dd/mm/yyyy): ");
+      Serial.print(now.day(), DEC); Serial.print('/');
+      if(int(now.month()) < 10) Serial.print("0");
+      Serial.print(now.month(), DEC); Serial.print("/");
+      Serial.println(now.year(), DEC);
+      
+      // now that we've used this GPS value, set the following flag to false:
+      good_RTC_time_from_GPS_and_satellites = false;
+
+      // Check that the times of various events is consistent with a good RTC setting
+  
+      bool ILikeIt = 
+      int(t_RTC_update - t_GPS_PPS)  >= t_RTC_update__t_GPS_PPS_min   &&
+      int(t_GPS_PPS - t_bump_go)     >= t_GPS_PPS___t_bump_go_min     &&
+      int(t_bump_go - t_GPS_read)    >= t_bump_go___t_GPS_read_min    &&
+      int(t_RTC_update - t_GPS_read) >= t_RTC_update___t_GPS_read_min &&
+      int(t_RTC_update - t_GPS_PPS)  <= t_RTC_update__t_GPS_PPS_max   &&
+      int(t_GPS_PPS - t_bump_go)     <= t_GPS_PPS___t_bump_go_max     &&
+      int(t_bump_go - t_GPS_read)    <= t_bump_go___t_GPS_read_max    &&
+      int(t_RTC_update - t_GPS_read) <= t_RTC_update___t_GPS_read_max ;
+    
+      if(ILikeIt) {
+        consecutive_good_sets_so_far++;
+      }else{
+        consecutive_good_sets_so_far = 0;
+      }
+     
+      time_to_quit = consecutive_good_sets_so_far >= thats_enough;
+
+    }
+
+  }
+
+  GPS_PPS_value_old = GPS_PPS_value;
+
+  // *******************************************************************************
+  // read data from the GPS; do this one character per pass through function loop.
+  // when synched to the PPS pin, the GPS sentence will start arriving about 170 ms
+  // after the PPS line goes high, according to the manufacturer of the MTK3339 GPS
+  // chipset. So we need to start by seeing if there's been a PPS 0 -> 1 transition.
+  // *******************************************************************************
+
+  char c;
+
+  // is there anything new to be read?
+
+  if(GPSSerial.available()) {
+
+    // read the character
+    c = GPS.read();
+
+    // a "$" indicates the start of a new sentence.
+    if (c == '$') {
+
+      //reset the array index indicating where we put the characters as we build the GPS sentence.
+      GPS_command_string_index = 0;
+      t_new_sentence = millis();
+      sentence_has_a_Z = false;
+
+    }else{
+  
+    GPS_command_string_index++;
+
+   }
+
+    // build up the data sentence, one character at a time.
+    GPS_sentence[GPS_command_string_index] = c;
+
+    // are we reading a sentence from the GPS that carries date/time information? The
+    // format is this: 
+    //    $GPZDA,hhmmss.sss,dd,mm,yyyy,xx,xx*CS 
+    // where CS is a checksum. Identify this kind of sentence by the presence of a Z.
+
+    if (c == 'Z') {
+      sentence_has_a_Z = true;
+    }
+    
+    // a "*" indicates the end of the sentence, except for the two-digit checksum and the CR/LF.
+    if (c == '*') {
+      t_end_of_sentence = millis();
+      t_GPS_read = t_end_of_sentence;
+      // Serial.print("Beginning, end of reception of latest GPS sentence: "); Serial.print(t_new_sentence);
+      // Serial.print(", "); Serial.println(t_end_of_sentence);
+
+      // convert GPS data sentence from a character array to a string.
+      GPS_sentence_string = String(GPS_sentence);
+
+      // print the GPS sentence
+      Serial.print("New GPS_sentence_string is "); 
+      Serial.println(GPS_sentence_string.substring(0, GPS_command_string_index+1));
+
+      // now parse the string if it corresponds to a date/time message.
+      if (sentence_has_a_Z) {
+        
+        GPS_hour_string = GPS_sentence_string.substring(GPZDA_hour_index1, GPZDA_hour_index2);
+        GPS_minutes_string = GPS_sentence_string.substring(GPZDA_minutes_index1, GPZDA_minutes_index2);
+        GPS_seconds_string = GPS_sentence_string.substring(GPZDA_seconds_index1, GPZDA_seconds_index2);
+        GPS_milliseconds_string = GPS_sentence_string.substring(GPZDA_milliseconds_index1, GPZDA_milliseconds_index2);
+        GPS_day_string = GPS_sentence_string.substring(GPZDA_day_index1, GPZDA_day_index2);
+        GPS_month_string = GPS_sentence_string.substring(GPZDA_month_index1, GPZDA_month_index2);
+        GPS_year_string = GPS_sentence_string.substring(GPZDA_year_index1, GPZDA_year_index2);
+  
+        Serial.print("GPS time (UTC) in this sentence is " + GPS_hour_string + ":" + GPS_minutes_string + ":" + 
+        GPS_seconds_string + "." + GPS_milliseconds_string);
+        Serial.println("      dd/mm/yyyy = " + GPS_day_string + "/" + GPS_month_string + "/" + GPS_year_string);
+  
+        // now convert to integers
+        GPS_hour = GPS_hour_string.toInt();
+        GPS_minutes = GPS_minutes_string.toInt();
+        GPS_seconds = GPS_seconds_string.toInt();
+        GPS_milliseconds = GPS_milliseconds_string.toInt();
+        GPS_day = GPS_day_string.toInt();
+        GPS_month = GPS_month_string.toInt();
+        GPS_year = GPS_year_string.toInt();
+  
+        // now set the RTC variables.
+        RTC_hour = GPS_hour;
+        RTC_minutes = GPS_minutes;
+        RTC_seconds = GPS_seconds;
+        RTC_day = GPS_day;
+        RTC_month = GPS_month;
+        RTC_year = GPS_year;
+  
+        // now try bumping everything by 1 second.
+        bump_by_1_sec();
+  
+        t_bump_go = millis();
+  
+        // set a flag saying that we have a good proposed time to load into the RTC. We
+        // will load this the next time we see a PPS 0 -> 1 transition.
+        good_RTC_time_from_GPS_and_satellites = true;
+        
+      }
+    }
+
+    Serial.print("Day: "); Serial.println(GPS_day);
+    Serial.print("Month: "); Serial.println(GPS_month);
+    Serial.print("Year: "); Serial.println(GPS_year);
+    Serial.print("Time: "); Serial.print(GPS_hour); Serial.print(":"); Serial.print(GPS_minutes); Serial.print(":"); Serial.println(GPS_seconds);
+  }
+}
+
+/////////////////////////////////////////////////////////////////////////
+
+void bump_by_1_sec(){
+
+  // bump the RTC clock time by 1 second relative to the GPS value reported 
+  // a few hundred milliseconds ago. I am using global variables for the ease
+  // of doing this. Note that we're going to need to handle roll-overs from 59 
+  // seconds to 0, and so forth.
+
+    bool bump_flag;
+    int place_holder;
+
+    bool debug_echo = false;
+
+    RTC_seconds_bumped = RTC_seconds + 1;
+
+    // use "place_holder" this way so the timings through the two branches of the if blocks 
+    // are the same
+    place_holder = RTC_seconds + 1;
+    
+    if(int(RTC_seconds_bumped) >= 60) {
+      bump_flag = true;
+      RTC_seconds_bumped = 0;
+      }else{
+      bump_flag = false;
+      RTC_seconds_bumped = place_holder;
+      }
+      
+    place_holder = RTC_minutes + 1;
+    
+    // do we also need to bump the minutes?  
+    if (bump_flag) {
+      RTC_minutes_bumped = place_holder;
+      }else{
+      RTC_minutes_bumped = RTC_minutes;
+      }
+
+    // again, do this to equalize the time through the two branches of the if block
+    place_holder = RTC_minutes_bumped;
+    
+    if(int(RTC_minutes_bumped) >= 60) {
+      bump_flag = true;
+      RTC_minutes_bumped = 0;
+      }else{
+      bump_flag = false;
+      RTC_minutes_bumped = place_holder;
+      }
+
+    place_holder = RTC_hour + 1;
+    
+    // do we also need to bump the hours?  
+    if (bump_flag) {
+      RTC_hour_bumped = place_holder;
+      }else{
+      RTC_hour_bumped = RTC_hour;
+      }
+
+    place_holder = RTC_hour;
+
+    if(int(RTC_hour_bumped) >= 24) {
+      bump_flag = true;
+      RTC_hour_bumped = 0;
+      }else{
+      bump_flag = false;
+      RTC_hour_bumped = place_holder;
+      }
+
+    place_holder = RTC_day + 1;
+    
+    // do we also need to bump the days?  
+    if (bump_flag) {
+      RTC_day_bumped = place_holder;
+      }else{
+      RTC_day_bumped = RTC_day;
+      }
+
+    // do we need to bump the month too? Note the stuff I do to make both paths
+    // through the if blocks take the same amount of execution time.
+    
+    int nobody_home;
+    int days_in_month = 31;
+
+    // 30 days hath September, April, June, and November...
+    if (int(RTC_month) == 9 || int(RTC_month) == 4 || int(RTC_month) == 6 || int(RTC_month) == 11) {
+      days_in_month = 30;
+    }else{
+      nobody_home = 99;
+    }
+      
+    // ...all the rest have 31, except February...
+    if (int(RTC_month) == 2 && (int(RTC_year) % 4)) {
+      days_in_month = 28;
+    }else{
+      nobody_home = 99;
+    }
+    
+    // ...leap year!
+    if (int(RTC_month) == 2 && !(int(RTC_year) % 4)) {
+      days_in_month = 29;
+    }else{
+      nobody_home = 99;
+    }
+
+    place_holder = RTC_day_bumped;
+    
+    if(int(RTC_day_bumped) > days_in_month) {
+      bump_flag = true;
+      RTC_day_bumped = 1;
+      }else{
+      bump_flag = false;
+      RTC_day_bumped = place_holder;
+      }
+
+    if (bump_flag) {
+      RTC_month_bumped = RTC_month + 1;
+      }else{
+      RTC_month_bumped = RTC_month;
+      }
+
+    place_holder = RTC_month_bumped;
+              
+    //... and also bump the year?
+    
+    if(int(RTC_month_bumped) > 12) {
+      bump_flag = true;
+      RTC_month_bumped = 1;
+      }else{
+      bump_flag = false;
+      RTC_month_bumped = place_holder;
+      }
+
+    if (bump_flag) {
+      RTC_year_bumped = RTC_year + 1;
+      }else{
+      RTC_year_bumped = RTC_year;
+      }
+
+    // keep track of when we have the proposed RTC time value ready for loading
+    time_ms_bumped_RTC_time_ready = millis();
+
+    if (debug_echo) {
+      // now print the newly bumped time:
+      Serial.print("Now have a proposed (1 second bumped) time ready at (ms) ");
+      Serial.println(time_ms_bumped_RTC_time_ready, DEC);       
+      Serial.print("Proposed (1 second bumped) time: ");
+      Serial.print(RTC_hour_bumped, DEC); Serial.print(':');
+      if(RTC_minutes_bumped < 10) Serial.print("0");
+      Serial.print(RTC_minutes_bumped, DEC); Serial.print(':');
+      if(RTC_seconds_bumped < 10) Serial.print("0");
+      Serial.print(RTC_seconds_bumped, DEC); 
+      Serial.print("   Date (dd/mm/yyyy): ");
+      Serial.print(RTC_day_bumped, DEC); Serial.print('/');
+      if(RTC_month_bumped < 10) Serial.print("0");
+      Serial.print(RTC_month_bumped, DEC); Serial.print("/");
+      Serial.println(RTC_year_bumped, DEC);
+    }
+  
+}    
+
+/////////////////////////////////////////////////////////////////////////
+
+// also at the end reset the GPS to the usual configuration.
+
+////////////////// That's it! ////////////////////////
