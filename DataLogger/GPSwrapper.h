@@ -1,3 +1,5 @@
+#pragma once
+
 #include <Arduino.h>
 #include <Adafruit_GPS.h>
 
@@ -109,4 +111,7 @@ class GPSwrapper
     String collectGPS();
     void printGPS();
     String readGPS();
+    
+    void updateTime();
+    void bumpBy1Sec();
 };

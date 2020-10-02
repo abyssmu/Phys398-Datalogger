@@ -2,8 +2,8 @@
 #include "GPSwrapper.h"
 
 #include <SPI.h>
-#include <SD.h>
 
+// SD card writing libraries
 #include "SdFat.h"
 #include "FreeStack.h"
 #include "AnalogBinLogger.h"
@@ -19,6 +19,8 @@
 #define READALL "7#" //output all files to serial window
 #define WRITEALL "8#" //write everything to sd card using their respective files
 #define DELETEALL "9#" //delete each file from sd card
+
+#define RECORD "11#" //record audio
 
 #define PRINTBME "51#" //prints bme680 to serial window
 #define PRINTGPS "52#" //prints gps to serial window
@@ -42,6 +44,15 @@ bool initSD();
 int findNextFile(String filename);
 void printSD(String filename);
 void writeSD(String filename, String data);
+
+void logData();
+void audioSetup();
+void audioLoop();
+void adcInit(metadata_t* meta);
+void adcStart();
+void adcStop();
+void checkOverrun();
+void dumpData();
 
 //This is the class that controls everything. Honestly, it's terribly named, but I'm not great at naming things.
 //It houses the class wrappers that control the modules on the breadboard.
