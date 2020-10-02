@@ -434,11 +434,11 @@ void audioLoop(void) {
   // status message
   Serial.println(F("Hit keyboard # to record again.\n"));
   //             0123456789012345       0123456789012345
-  LCD_message(F("Hit keypad # to "), F("record more     "));
+  LCD_message(F("Stopped."), F(""));
 
   // now see if user would like to record more audio. hang in a while loop until
   // we detect a # from the keypad.
-
+  /*
   char the_key = '?'; 
   char got_a_key;
   
@@ -452,7 +452,7 @@ void audioLoop(void) {
     if (the_key == '#') {break;}
         
   }
-  
+  */
   // land here when we got a keypad #. this'll cause us to reenter the
   // loop function and call logData again.
 
@@ -839,8 +839,6 @@ void logData() {
   // Allocate extra buffer space.
   block_t block[BUFFER_BLOCK_COUNT];
 
-  Serial.println();
-
   // Initialize ADC and timer1.
   adcInit((metadata_t*) &block[0]);
 
@@ -860,6 +858,31 @@ void logData() {
       binName[BASE_NAME_SIZE]++;
     }
   }
+
+  String metaName = "";
+  for (int i = 0; i < BASE_NAME_SIZE+2; i++) {
+    metaName += binName[i];
+  }
+  metaName += ".txt";
+  Serial.println(metaName);
+  File metaFile = sd.open(metaName, FILE_WRITE);
+  metaFile.print("Current time is:");
+  now = rtc.now();
+  metaFile.print(now.hour(), DEC);
+  metaFile.print(':');
+  if(now.minute() < 10)   metaFile.print(0);
+  metaFile.print(now.minute(), DEC);
+  metaFile.print(':');
+  if(now.second() < 10)   metaFile.print(0);
+  metaFile.print(now.second(), DEC);
+
+  metaFile.print("   Date (dd/mm/yyyy): ");
+  metaFile.print(now.day(), DEC); metaFile.print('/');
+  if(int(now.month()) < 10) metaFile.print("0");
+  metaFile.print(now.month(), DEC); metaFile.print("/");
+  metaFile.println(now.year(), DEC);
+  metaFile.close();
+
   
   // Delete old tmp file.
   if (sd.exists(TMP_FILE_NAME)) {
@@ -1078,7 +1101,7 @@ void logData() {
 void gpsSetup () {
 
   // fire up the serial monitor
-  Serial.begin(115200);
+  Serial.begin(9600);
   while(!Serial){};
   
   Serial.println("Let's set the DS3231 real time clock from the GPS after acquiring satellites.");

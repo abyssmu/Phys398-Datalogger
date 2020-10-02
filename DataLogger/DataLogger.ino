@@ -6,7 +6,7 @@ CmdCenter cmdCenter;
 //I took everything and put it in the CmdCenter class.
 void setup() {
   //initialize serial monitor to 9600 baud
-  Serial.begin(115200);
+  Serial.begin(9600);
   #ifndef ESP8266
     while (!Serial); // wait for serial port to connect. Needed for native USB
   #endif

@@ -1,10 +1,10 @@
 #include <LiquidCrystal.h>
 
 //Womack pins
-const int rs = A8, en = A9, d4 = A10, d5 = A11, d6 = A12, d7 = A13;
+//const int rs = A8, en = A9, d4 = A10, d5 = A11, d6 = A12, d7 = A13;
 
 //Logger pins
-//const int rs = 12, en = 11, d4 = 36, d5 = 34, d6 = 32, d7 = 30;
+const int rs = 12, en = 11, d4 = 36, d5 = 34, d6 = 32, d7 = 30;
 LiquidCrystal lcd(rs, en, d4, d5, d6, d7);
 
 // total number of characters in one line of the LCD display
