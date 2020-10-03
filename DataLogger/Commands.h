@@ -5,14 +5,12 @@
 class CmdCenter
 {
   private:
-    BMEwrapper bme;
-
     //cmdand string to keep track of keypad codes
     String cmd = "";
     //Boolean cmdand to see if data can be logged
     bool logData = false;
 
-  public:
+  public:    
     CmdCenter() {}
     ~CmdCenter() {}
 
@@ -20,6 +18,7 @@ class CmdCenter
     int checkCmd(); //checks current command against list of commands
     char checkKey(); //obtains keys pressed by keypad
     void getInput(); //checks for any input from keypad and checks for commands
-    void loopData(String filename); //loops through data collection LOOPTIMES
     bool runCmd(); //runs the commands obtained from checkCmd
+
+    bool collectData(); //function to run full data collection routine
 };

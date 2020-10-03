@@ -3,6 +3,8 @@
 #include "KeypadVar.h"
 #include "LCDHelper.h"
 
+BMEwrapper bme;
+
 #include <SPI.h>
 
 // SD card writing libraries
@@ -18,15 +20,11 @@
 
 #define READBME "1#" //output bme680 file to serial window
 #define WRITEBME "2#" //write bme680 to sd card using BMEFILE
-#define DELETEBME "3#" //delete BMEFILE from sd card
 #define READGPS "4#" //output gps file to serial window
 #define WRITEGPS "5#" //write gps to sd card using GPSFILE
-#define DELETEGPS "6#" //delete GPSFILE from sd card
-#define READALL "7#" //output all files to serial window
-#define WRITEALL "8#" //write everything to sd card using their respective files
-#define DELETEALL "9#" //delete each file from sd card
 
-#define RECORD "11#" //record audio
+#define RECORD "7#" //record audio
+#define COLLECT "8#" //collect data routine
 
 #define PRINTBME "51#" //prints bme680 to serial window
 #define PRINTGPS "52#" //prints gps to serial window
@@ -35,7 +33,7 @@
 #define LIST "98#" //list all commands on LCD
 #define CLEAR "***" //clears LCD screen
 
-#define LOOPTIMES 2 //number of times to loop through data in seconds
+#define LOOPTIMES 5 //number of times to loop through data in seconds
 #define DATAPERSECOND 1 //number of times to gather data in one second
 
 //names of the data files
@@ -332,12 +330,15 @@ Adafruit_GPS GPS(&GPSSerial);
  
 // define a command to enable all NMEA outputs from the GPS
 #define PMTK_ALL_ON "$PMTK314,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1*29"
+
+#define PMTK_SET_NMEA_UPDATE_10SEC "$PMTK220,10000*2F"
+#define PMTK_SET_NMEA_UPDATE_5SEC "$PMTK220,5000*2F"
  
 // See https://blogs.fsfe.org/t.kandler/2013/11/17/ for additional GPS definitions.
 
 // we don't expect a valid GPS "sentence" to be longer than this...
 #define GPSMAXLENGTH 120
-char GPS_sentence[GPSMAXLENGTH];
+char* GPS_sentence;
 int GPS_command_string_index;
 
 // we'll also want to convert the GPS sentence character array to a string for convenience
@@ -467,8 +468,171 @@ bool GPSECHO_loop = true;
 void bump_by_1_sec(void);
 void gpsLoop();
 void gpsSetup();
+int gpsQuery();
 
 // a counter
 int i_am_so_bored;
 
 /////////////////////////////////////////////////////////////////////////
+
+// Set GPSECHO_GPS_query to 'false' to turn off echoing the GPS data to the Serial console  
+// from the GPS_query function. (Set it to true when debugging.)
+#define GPSECHO_GPS_query true
+
+// a similar debugging flag for loop():
+#define GPSECHO_loop true
+
+// also define some more stuff relating to update rates. See 
+// https://blogs.fsfe.org/t.kandler/2013/11/17/set-gps-update-
+// rate-on-arduino-uno-adafruit-ultimate-gps-logger-shield/
+#define PMTK_SET_NMEA_UPDATE_10SEC "$PMTK220,10000*2F"
+#define PMTK_SET_NMEA_UPDATE_5SEC "$PMTK220,5000*2F"
+     
+// we don't expect a valid GPS "sentence" to be longer than this...
+#define GPSMAXLENGTH 120
+// or shorter than this:
+#define GPSMINLENGTH 55
+
+// a string to hold what kind of GPS sentence we've received
+String GPS_command;
+
+// pointers into parts of a GPRMC GPS data sentence:
+
+// pointers into parts of a GPRMC GPS data sentence:
+
+// old: const int GPRMC_hour_index1 = 8;
+const int GPRMC_hour_index1 = 7;
+const int GPRMC_hour_index2 = GPRMC_hour_index1 + 2;
+
+const int GPRMC_minutes_index1 = GPRMC_hour_index2;
+const int GPRMC_minutes_index2 = GPRMC_minutes_index1 + 2;
+      
+const int GPRMC_seconds_index1 = GPRMC_minutes_index2;
+const int GPRMC_seconds_index2 = GPRMC_seconds_index1 + 2;
+      
+const int GPRMC_milliseconds_index1 = GPRMC_seconds_index2 + 1;   // skip the decimal point
+const int GPRMC_milliseconds_index2 = GPRMC_milliseconds_index1 + 3;
+      
+// const int GPRMC_AV_code_index1 = 19;
+const int GPRMC_AV_code_index1 = GPRMC_hour_index1 +  11;
+const int GPRMC_AV_code_index2 = GPRMC_AV_code_index1 + 1;
+      
+// const int GPRMC_latitude_1_index1 = 21;
+const int GPRMC_latitude_1_index1 = GPRMC_AV_code_index1 + 2;
+const int GPRMC_latitude_1_index2 = GPRMC_latitude_1_index1 + 4;
+      
+const int GPRMC_latitude_2_index1 = GPRMC_latitude_1_index2 + 1;   // skip the decimal point
+const int GPRMC_latitude_2_index2 = GPRMC_latitude_2_index1 + 4;
+
+// const int GPRMC_latitude_NS_index1 = 31;
+const int GPRMC_latitude_NS_index1 = GPRMC_latitude_1_index1 + 10;
+const int GPRMC_latitude_NS_index2 = GPRMC_latitude_NS_index1 + 1;
+
+// const int GPRMC_longitude_1_index1 = 33;
+const int GPRMC_longitude_1_index1 = GPRMC_latitude_NS_index1 + 2;
+const int GPRMC_longitude_1_index2 = GPRMC_longitude_1_index1 + 5;    // 0 - 180 so we need an extra digit
+      
+const int GPRMC_longitude_2_index1 = GPRMC_longitude_1_index2 + 1;   // skip the decimal point
+const int GPRMC_longitude_2_index2 = GPRMC_longitude_2_index1 + 4;
+      
+// const int GPRMC_longitude_EW_index1 = 44;
+const int GPRMC_longitude_EW_index1 = GPRMC_longitude_1_index1 + 11;
+const int GPRMC_longitude_EW_index2 = GPRMC_longitude_EW_index1 + 1;
+
+// pointers into a GPGGA GPS data sentence:
+
+// old: const int GPGGA_hour_index1 = 8;
+const int GPGGA_hour_index1 = 7;
+const int GPGGA_hour_index2 = GPGGA_hour_index1 + 2;
+
+const int GPGGA_minutes_index1 = GPGGA_hour_index2;
+const int GPGGA_minutes_index2 = GPGGA_minutes_index1 + 2;
+      
+const int GPGGA_seconds_index1 = GPGGA_minutes_index2;
+const int GPGGA_seconds_index2 = GPGGA_seconds_index1 + 2;
+      
+const int GPGGA_milliseconds_index1 = GPGGA_seconds_index2 + 1;   // skip the decimal point
+const int GPGGA_milliseconds_index2 = GPGGA_milliseconds_index1 + 3;
+      
+// const int GPGGA_latitude_1_index1 = 19;
+const int GPGGA_latitude_1_index1 = GPGGA_hour_index1 + 11;
+const int GPGGA_latitude_1_index2 = GPGGA_latitude_1_index1 + 4;
+      
+const int GPGGA_latitude_2_index1 = GPGGA_latitude_1_index2 + 1;   // skip the decimal point
+const int GPGGA_latitude_2_index2 = GPGGA_latitude_2_index1 + 4;
+
+// const int GPGGA_latitude_NS_index1 = 29;
+const int GPGGA_latitude_NS_index1 = GPGGA_latitude_1_index1 + 10;
+const int GPGGA_latitude_NS_index2 = GPGGA_latitude_NS_index1 + 1;
+
+// const int GPGGA_longitude_1_index1 = 31;
+const int GPGGA_longitude_1_index1 = GPGGA_latitude_NS_index1 + 2;
+const int GPGGA_longitude_1_index2 = GPGGA_longitude_1_index1 + 5;    // 0 - 180 so we need an extra digit
+      
+const int GPGGA_longitude_2_index1 = GPGGA_longitude_1_index2 + 1;   // skip the decimal point
+const int GPGGA_longitude_2_index2 = GPGGA_longitude_2_index1 + 4;
+      
+// const int GPGGA_longitude_EW_index1 = 42;
+const int GPGGA_longitude_EW_index1 = GPGGA_longitude_1_index1 + 11;
+const int GPGGA_longitude_EW_index2 = GPGGA_longitude_EW_index1 + 1;
+
+// const int GPGGA_fix_quality_index1 = 44;
+const int GPGGA_fix_quality_index1 = GPGGA_longitude_EW_index1 + 2;
+const int GPGGA_fix_quality_index2 = GPGGA_fix_quality_index1 + 1;
+
+// const int GPGGA_satellites_index1 = 46;
+const int GPGGA_satellites_index1 = GPGGA_fix_quality_index1 + 2;
+const int GPGGA_satellites_index2 = GPGGA_satellites_index1 + 2;
+
+// distance in from the end of the sentence for the asterisk
+const int asterisk_backup = 5;
+
+// keep track of how many times we've read a character from the GPS device. 
+long GPS_char_reads = 0;
+
+// bail out if we exceed the following number of attempts. when set to 1,000,000 this corresponds
+// to about 6 seconds. we need to do this to keep an unresponsive GPS device from hanging the program.
+const long GPS_char_reads_maximum = 1000000;
+
+// this one tells us about data validity: A is good, V is invalid.
+String GPS_AV_code_string;
+
+// latitude data
+String GPS_latitude_1_string;
+String GPS_latitude_2_string;
+String GPS_latitude_NS_string;
+int GPS_latitude_1;
+int GPS_latitude_2;
+
+// longitude data
+String GPS_longitude_1_string;
+String GPS_longitude_2_string;
+String GPS_longitude_EW_string;
+int GPS_longitude_1;
+int GPS_longitude_2;
+
+// velocity information; speed is in knots! 
+String GPS_speed_knots_string;
+String GPS_direction_string;
+float GPS_speed_knots;
+float GPS_direction;
+
+String GPS_date_string;
+
+String GPS_fix_quality_string;
+String GPS_satellites_string;
+int GPS_fix_quality;
+int GPS_satellites;
+
+String GPS_altitude_string;
+float GPS_altitude;
+
+// Let's limit the numnber of times we will spin thrugh the "loop" function before
+// closing the data file and parking the program in an infinite loop.
+const long maximum_times_to_loop = 20000000;
+long my_counter;
+
+
+//////////////////////////////////////////////////////////////////////
+//////////////////// end of global parameters ////////////////////////
+//////////////////////////////////////////////////////////////////////

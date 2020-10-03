@@ -1,5 +1,74 @@
 #include "Includes.h"
 
+void collectBME()
+{
+  //time difference between data collection
+  int dT = 1000 / DATAPERSECOND;
+
+  String data = "";
+
+  data += bme.collectBME();
+  delay(dT);
+
+  writeSD(BMEFILE, data);
+}
+
+void collectGPS()
+{
+  String data = "";
+
+  data += String(GPS_latitude_1) + "." + String(GPS_latitude_1) + "W, ";
+  data += String(GPS_longitude_1) + "." + String(GPS_longitude_2) + "N";
+
+  writeSD(GPSFILE, data);
+}
+
+void collectTime()
+{
+  String metaName = "";
+  for (int i = 0; i < BASE_NAME_SIZE+2; i++) {
+    metaName += binName[i];
+  }
+  metaName += ".txt";
+  Serial.println(metaName);
+  File metaFile = sd.open(metaName, FILE_WRITE);
+  metaFile.print("Current time is:");
+  metaFile.print(GPS_hour, DEC);
+  metaFile.print(':');
+  if(GPS_minutes < 10)   metaFile.print(0);
+  metaFile.print(GPS_minutes, DEC);
+  metaFile.print(':');
+  if(GPS_seconds < 10)   metaFile.print(0);
+  metaFile.print(GPS_seconds, DEC);
+
+  metaFile.print("   Date (dd/mm/yyyy): " + String(GPS_date_string));
+//  metaFile.print(GPS_day, DEC); metaFile.print('/');
+//  if(int(GPS_month) < 10) metaFile.print("0");
+//  metaFile.print(GPS_month, DEC); metaFile.print("/");
+//  metaFile.println(GPS_year, DEC);
+  metaFile.close();
+}
+
+void executeAudio()
+{
+  
+}
+
+bool CmdCenter::collectData()
+{
+  for(int i = 0; i < LOOPTIMES; ++i)
+  {
+    collectBME();
+
+    //this is here to keep the time up to date
+    gpsQuery();
+  }
+  
+  collectGPS();
+  collectTime();
+  executeAudio();
+}
+
 bool CmdCenter::init()
 {
   lcd.begin(16, 2);
@@ -25,15 +94,11 @@ int CmdCenter::checkCmd()
 {
   if (cmd == READBME) return 1;
   if (cmd == WRITEBME) return 2;
-  if (cmd == DELETEBME) return 3;
   if (cmd == READGPS) return 4;
   if (cmd == WRITEGPS) return 5;
-  if (cmd == DELETEGPS) return 6;
-  if (cmd == READALL) return 7;
-  if (cmd == WRITEALL) return 8;
-  if (cmd == DELETEALL) return 9;
 
-  if (cmd == RECORD) return 11;
+  if (cmd == RECORD) return 7;
+  if (cmd == COLLECT) return 8;
 
   if (cmd == PRINTBME) return 51;
   if (cmd == PRINTGPS) return 52;
@@ -54,7 +119,7 @@ char CmdCenter::checkKey()
 void CmdCenter::getInput()
 {
   char keyResult = checkKey();
-  
+
   if (keyResult)
   {
     cmd += keyResult;
@@ -66,46 +131,8 @@ void CmdCenter::getInput()
       cmd = "";
     }
   }
-}
 
-void CmdCenter::loopData(String mode)
-{
-  String data = ""; //collects all data at once and then writes to sd
-  int timeDelay = 1000 / DATAPERSECOND; //time between each data collection
-  
-  if (mode == BMEFILE)
-  {
-    for(int i = 0; i < LOOPTIMES; ++i)
-    {
-      data += bme.collectBME();
-      delay(timeDelay);
-    }
-
-    writeSD(BMEFILE, data);
-  }
-  else if (mode == GPSFILE)
-  {
-    for(int i = 0; i < LOOPTIMES; ++i)
-    {
-      //data += gps.collectGPS();
-      delay(timeDelay);
-    }
-
-    writeSD(GPSFILE, data);
-  }
-  else if (mode == "all")
-  {
-    String dataGPS = "";
-    for(int i = 0; i < LOOPTIMES; ++i)
-    {
-      data += bme.collectBME();
-      //dataGPS += gps.collectGPS();
-      delay(timeDelay);
-    }
-
-    writeSD(BMEFILE, data);
-    writeSD(GPSFILE, dataGPS);
-  }
+  gpsLoop();
 }
 
 bool CmdCenter::runCmd()
@@ -119,13 +146,8 @@ bool CmdCenter::runCmd()
       return true;
 
     case 2:
-      loopData(BMEFILE);
+      collectBME();
       cmd = "Write BME";
-      return true;
-
-    case 3:
-      sd.remove(BMEFILE);
-      cmd = "Delete BME";
       return true;
 
     case 4:
@@ -134,35 +156,18 @@ bool CmdCenter::runCmd()
       return true;
 
     case 5:
-      loopData(GPSFILE);
+      collectGPS();
       cmd = "Write GPS";
       return true;
 
-    case 6:
-      sd.remove(GPSFILE);
-      cmd = "Delete GPS";
-      return true;
-
     case 7:
-      printSD(BMEFILE);
-      printSD(GPSFILE);
-      cmd = "Read ALL";
+      audioLoop();
+      cmd = "Record";
       return true;
 
     case 8:
-      loopData("all");
-      cmd = "Write ALL";
-      return true;
-
-    case 9:
-      sd.remove(BMEFILE);
-      sd.remove(GPSFILE);
-      cmd = "Delete ALL";
-      return true;
-
-    case 11:
-      audioLoop();
-      cmd = "Record";
+      collectData();
+      cmd = "Collect Data";
       return true;
 
     case 51:
@@ -211,17 +216,19 @@ bool initSD()
 
 int findNextFile(String filename)
 {
-  File dir = sd.open("/");
+  SdFile dir;
+  sd.chdir("/", true);
+  
   String fCaps = filename;
   fCaps.toUpperCase();
   int largest = 0;
   
-  while(true)
+  while(dir.openNext(sd.vwd(), FILE_READ))
   {
-    File entry = dir.openNextFile();
-    if(!entry) break;
-
-    String n = String(entry.name());
+    String n = "";
+    //char* n[8];
+    //dir.getName(n, sizeof(n));
+    //Serial.println(String(n));
     
     if (n.indexOf(fCaps) != -1)
     {
@@ -234,8 +241,6 @@ int findNextFile(String filename)
         largest = fileNum;
       }
     }
-
-    entry.close();
   }
 
   dir.close();
@@ -260,23 +265,24 @@ void printSD(String filename)
 void writeSD(String filename, String data)
 {
   int num = findNextFile(filename);
+  Serial.println(num);
   
   filename += "-";
 
   if(num < 10)
   {
-    filename += "00" + String(num) + ".txt";
+    filename += "00" + String(num);
   }
   else if(num < 100)
   {
-    filename += "0" + String(num) + ".txt";
+    filename += "0" + String(num);
   }
   else
   {
-    filename += String(num) + ".txt";
+    filename += String(num);
   }
 
-  File dataFile = sd.open(filename, FILE_WRITE);
+  File dataFile = sd.open(filename + ".txt", FILE_WRITE);
 
   if (dataFile) {
     dataFile.println(data);
@@ -386,24 +392,11 @@ void writeSD(String filename, String data)
 ///////////////////////////    function ///////////////////////////
 //////////////////////////////////////////////////////////////////////
 
-void audioSetup(void) {
-
-  // set up the LCD's number of columns and rows:
-  lcd.begin(16, 2);
-
-  // Print a message to the LCD.
-  //             0123456789012345       0123456789012345
-  LCD_message(F("Physics 398DLP  "), F("Record at 32kHz "));
-
-  // delay a bit so I have time to see the display.
-  delay(1000);
-  
+void audioSetup(void)
+{
   // if we will blink the LED when there are errors, tell the Arduino that
   // the pin is to be an output.
   if (ERROR_LED_PIN >= 0) {pinMode(ERROR_LED_PIN, OUTPUT);}
-
-  // fire up the serial monitor line
-  Serial.begin(9600);
 
   // Read the first sample pin to force the ADC to initialize itself.
   analogRead(PIN_LIST[0]);
@@ -412,17 +405,15 @@ void audioSetup(void) {
   // not over 50 MHz. Try a lower speed if SPI errors occur.
   if (!sd.begin(SD_CS_PIN, SD_SCK_MHZ(50))) {
     sd.initErrorPrint();
-    fatalBlink();
   }
-
 }
 
 //////////////////////////////////////////////////////////////////////
 /////////////////////////// loop function ////////////////////////////
 //////////////////////////////////////////////////////////////////////
 
-void audioLoop(void) {
-  
+void audioLoop(void)
+{
   // tell the user what's happening.
   Serial.println(F("About to record microphone data. Hit keypad * to stop."));
   //             0123456789012345       0123456789012345
@@ -435,27 +426,6 @@ void audioLoop(void) {
   Serial.println(F("Hit keyboard # to record again.\n"));
   //             0123456789012345       0123456789012345
   LCD_message(F("Stopped."), F(""));
-
-  // now see if user would like to record more audio. hang in a while loop until
-  // we detect a # from the keypad.
-  /*
-  char the_key = '?'; 
-  char got_a_key;
-  
-  while(1) {
-    
-    // getKeys will load any keys pressed into key array.
-    got_a_key = customKeypad.getKeys();
-
-    if (got_a_key) {the_key = customKeypad.key[0].kchar;}
-
-    if (the_key == '#') {break;}
-        
-  }
-  */
-  // land here when we got a keypad #. this'll cause us to reenter the
-  // loop function and call logData again.
-
 }
 
 //////////////////////////////////////////////////////////////////////
@@ -858,31 +828,6 @@ void logData() {
       binName[BASE_NAME_SIZE]++;
     }
   }
-
-  String metaName = "";
-  for (int i = 0; i < BASE_NAME_SIZE+2; i++) {
-    metaName += binName[i];
-  }
-  metaName += ".txt";
-  Serial.println(metaName);
-  File metaFile = sd.open(metaName, FILE_WRITE);
-  metaFile.print("Current time is:");
-  now = rtc.now();
-  metaFile.print(now.hour(), DEC);
-  metaFile.print(':');
-  if(now.minute() < 10)   metaFile.print(0);
-  metaFile.print(now.minute(), DEC);
-  metaFile.print(':');
-  if(now.second() < 10)   metaFile.print(0);
-  metaFile.print(now.second(), DEC);
-
-  metaFile.print("   Date (dd/mm/yyyy): ");
-  metaFile.print(now.day(), DEC); metaFile.print('/');
-  if(int(now.month()) < 10) metaFile.print("0");
-  metaFile.print(now.month(), DEC); metaFile.print("/");
-  metaFile.println(now.year(), DEC);
-  metaFile.close();
-
   
   // Delete old tmp file.
   if (sd.exists(TMP_FILE_NAME)) {
@@ -1098,14 +1043,12 @@ void logData() {
   Serial.println(F("Done"));
 }
 
-void gpsSetup () {
+//////////////////////////////////////////////////////////////////////
+////////////////////////////GPS info//////////////////////////////////
+//////////////////////////////////////////////////////////////////////
 
-  // fire up the serial monitor
-  Serial.begin(9600);
-  while(!Serial){};
-  
-  Serial.println("Let's set the DS3231 real time clock from the GPS after acquiring satellites.");
-
+void gpsSetup()
+{
   // declare the GPS PPS pin to be an Arduino input 
   pinMode(GPS_PPS_pin, INPUT);
 
@@ -1135,53 +1078,51 @@ void gpsSetup () {
   // to the manufacturer, the GPS will start snding us a date/time data sentence about 170
   // milliseconds after the PPS line transitions fom 0 to 1. 
   GPS.sendCommand(PMTK_SET_SYNC_PPS_NMEA);
+
+  // turn on RMC (recommended minimum) and GGA (fix data, including altitude)
+  GPS.sendCommand(PMTK_SET_NMEA_OUTPUT_RMCGGA);
+  
+  // uncomment this line to turn on only the "minimum recommended" data:
+  // GPS.sendCommand(PMTK_SET_NMEA_OUTPUT_RMCONLY);
+  
+  // Set the update rate to once per second. Faster than this might make it hard for
+  // the serial communication line to keep up: you'll need to check this.
+  GPS.sendCommand(PMTK_SET_NMEA_UPDATE_1HZ); 
+  
+  // You'll want to check that the faster read rates work reliably for you before
+  // using them. The readout rates are, of course, 1, 2, 5, and 10 Hz.
+  // GPS.sendCommand(PMTK_SET_NMEA_UPDATE_1HZ); 
+  // GPS.sendCommand(PMTK_SET_NMEA_UPDATE_2HZ); 
+  // GPS.sendCommand(PMTK_SET_NMEA_UPDATE_5HZ); 
+  // GPS.sendCommand(PMTK_SET_NMEA_UPDATE_10HZ); 
+  
+  // Uncomment this to set the update rate to once per 5 seconds.
+  // GPS.sendCommand(PMTK_SET_NMEA_UPDATE_5SEC);
+     
+  // Uncomment this to set the update rate to once per 10 seconds.
+  // GPS.sendCommand(PMTK_SET_NMEA_UPDATE_10SEC);
+     
+  // Request updates on antenna status, comment out to keep quiet.
+  // GPS.sendCommand(PGCMD_ANTENNA);
+
+  // Ask for firmware version, write this to the serial line. Comment out to keep quiet.
+  // GPSSerial.println(PMTK_Q_RELEASE);
   
   // this keeps track of where in the string of characters of a GPS data sentence we are.
   GPS_command_string_index = 0;
 
   // more initialization
   sentence_has_a_Z = false;
-
   time_to_quit = false;
 
   // fire up the RTC.
-  Serial.print("Fire up the RTC. return code is "); 
   int return_code = rtc.begin();
-  Serial.println(rtc.begin());
 
   // problems?
   if(!return_code) {
     Serial.println("RTC wouldn't respond so bail out.");
     while (1) {};
   }
-
-  // now try read back the RTC to check.       
-  delay(500);
-  
-  now = rtc.now();
-  Serial.print("Now read back the RTC to check during setup. ");
-  Serial.print(now.hour(), DEC);
-  Serial.print(':');
-  if(now.minute() < 10)   Serial.print(0);
-  Serial.print(now.minute(), DEC);
-  Serial.print(':');
-  if(now.second() < 10)   Serial.print(0);
-  Serial.print(now.second(), DEC);
-
-  Serial.print("   Date (dd/mm/yyyy): ");
-  Serial.print(now.day(), DEC); Serial.print('/');
-  if(int(now.month()) < 10) Serial.print("0");
-  Serial.print(now.month(), DEC); Serial.print("/");
-  Serial.println(now.year(), DEC);
-  
-  // set up the LCD's number of columns and rows:
-  lcd.begin(16, 2);
-
-  // Print a message to the LCD.
-  lcd.setCursor(0, 0);
-  lcd.print("Now looking for ");
-  lcd.setCursor(0, 1);
-  lcd.print("GPS satellites  ");
 }
 
 /////////////////////////////////////////////////////////////////////////
@@ -1226,42 +1167,14 @@ void gpsLoop () {
   */
 
   if(time_to_quit) {
-
-    // print a message to the serial monitor, but only once.
-    if (i_am_so_bored == 0) Serial.print("\n\nTime to quit! We have set the RTC.");
-
-    // Print a message to the LCD each pass through, updating the time.
-    lcd.setCursor(0, 0);
-    //         0123456789012345
-    lcd.print("RTC is now set  ");
-
-    // blank the LCD's second line 
-    lcd.setCursor(0, 1);
-    lcd.print("                ");
-
-    // print the time
-    lcd.setCursor(0, 1);
-    now = rtc.now();
-    
-    if(now.hour() < 10)   lcd.print(0);
-    lcd.print(now.hour(), DEC);
-    
-    lcd.print(':');
-    if(now.minute() < 10)   lcd.print(0);
-    lcd.print(now.minute());
-    
-    lcd.print(':');
-    if(now.second() < 10)   lcd.print(0);
-    lcd.print(now.second());
-
-    delay(50);
-
     // increment a counter
     i_am_so_bored++;
 
     return;
   }
 
+  gpsQuery();
+  
   // *******************************************************************************
 
   // now check to see if we just got a PPS 0 -> 1 transition, indicating that the
@@ -1448,11 +1361,6 @@ void gpsLoop () {
         
       }
     }
-
-    Serial.print("Day: "); Serial.println(GPS_day);
-    Serial.print("Month: "); Serial.println(GPS_month);
-    Serial.print("Year: "); Serial.println(GPS_year);
-    Serial.print("Time: "); Serial.print(GPS_hour); Serial.print(":"); Serial.print(GPS_minutes); Serial.print(":"); Serial.println(GPS_seconds);
   }
 }
 
@@ -1613,7 +1521,468 @@ void bump_by_1_sec(){
       Serial.println(RTC_year_bumped, DEC);
     }
   
-}    
+}
+
+int gpsQuery()
+{
+
+  // return 0 if we found good GPS navigational data and -1 if not. we might
+  // return a -1 when there is an error in the data, or when the sentence
+  // doesn't carry navigational information.
+  
+  // The GPS device has its own microprocessor and, once we have loaded its parameters,
+  // free-runs at a fixed sampling rate. We do not trigger its registration of
+  // latitude and longitude, rather we just read from it the last data record
+  // it has stored. And we do it one character at a time!
+
+  // I will ask the GPS for a single character, which will be an ASCII null ('\0')
+  // if there are no data to be read, and something else if there are data present.
+  // If I get an ASCII null, just return immediately with a -1 return code. If I DO find
+  // some data, then keep reading it until we are finished, or else hit another ASCII null.
+
+  // When the GPS has yielded a complete, entire sentence of navigation data, we'll parse 
+  // it and load that information into some global variables. 
+
+  // initialize the number-of-reads counter. 
+  GPS_char_reads = 0;
+
+  // This gets the last sentence read from GPS and clears a newline flag in the Adafruit 
+  // library code. If there aren't any data, we'll get an ASCII null.
+  GPS_sentence = GPS.lastNMEA();  
+
+  // Stay inside the following loop until we've read a complete GPS sentence with
+  // good navigational data, or else the loop times out. With GPS_char_reads_maximum 
+  // set to a million this'll take about 6 seconds to time out. 
+
+  while (true) {
+  
+    while(GPS_char_reads <= GPS_char_reads_maximum) 
+      {
+  
+      // try to read a single character from the GPS device. we'll get an ascii 
+      // null ('\0') if there's nothing to read, either becauser we're reading 
+      // to fast for the GPS to keep up, or becauser there's not data to repprt.
+      char single_GPS_char = GPS.read();
+  
+      if(single_GPS_char == '\0')
+        {
+        // Serial.println("\ncharacter was a null so bail out.");
+        return -1;
+        }
+  
+      // echo the character to the screen.
+      if(GPSECHO_GPS_query) Serial.print(single_GPS_char);
+      
+      // bump the number of times we've tried to read from the GPS.
+      GPS_char_reads++;
+  
+      // now ask if we've received a complete data sentence. If yes, break
+      // out of the "while(GPS_char_reads <= GPS_char_reads_maximum)" loop. 
+      
+      if(GPS.newNMEAreceived()) break;
+  
+      }
+    
+    // if we've landed here because we hit the limit on the number of character reads we've 
+    // tried, print a message and bail out.
+    
+    if (GPS_char_reads >= GPS_char_reads_maximum) 
+      {
+      Serial.println("Having trouble reading GPS navigation data. Try again later.");
+      return -1;        
+      }
+
+    // Land here because we have received a complete GPS sentence and executed the "break" 
+    // in the above while loop. get the last complete sentence read from the GPS.
+    GPS_sentence = GPS.lastNMEA();
+    
+    // convert GPS data sentence from a character array to a string.
+    GPS_sentence_string = String(GPS_sentence);
+  
+    if (GPSECHO_GPS_query) 
+      {
+      Serial.println("\n******************\njust received a complete sentence, so parse stuff. Sentence is");
+      Serial.println(GPS_sentence_string);
+      }
+  
+    // now do a cursory check that the sentence we've just read is OK. Check that there is only
+    // one $, as the first character in the sentence, and that there's an asterisk (which comes 
+    // immediately before the checksum).
+     
+    // sentence starts with a $? 
+    bool data_OK = GPS_sentence_string.charAt(0) == '$';    
+  
+    // sentence contains no other $? The indexOf call will return -1 if $ is not found.
+    data_OK = data_OK && (GPS_sentence_string.indexOf('$', 2) <  0);
+    
+    // now find that asterisk...
+    data_OK = data_OK && (GPS_sentence_string.indexOf('*', 0) >  0);
+  
+    // now parse the GPS sentence. I am only interested in sentences that begin with
+    // $GPGGA ("GPS fix data") or $GPRMC ("recommended minimum specific GPS/Transit data").
+  
+    if(GPSECHO_GPS_query)
+      {
+      Serial.print("length of GPS_sentence_string just received...");
+      Serial.println(GPS_sentence_string.length());
+      }
+  
+    // now get substring holding the GPS command. Only proceed if it is $GPRMC or $GPGGA.
+    GPS_command = GPS_sentence_string.substring(0, 6);
+  
+    // also trim it to make sure we don't have hidden stuff or white space sneaking in.
+    GPS_command.trim();
+  
+    if(GPSECHO_GPS_query) 
+      {
+      Serial.print("GPS command is "); Serial.println(GPS_command);
+      }   
+  
+    // if data_OK is true then we have a good sentence. but we also need the sentence
+    // to hold navigational data we can use. we can only work with GPRMC and GPGGA sentences. 
+  
+    bool command_OK = GPS_command.equals("$GPRMC") || GPS_command.equals("$GPGGA"); 
+    
+    // if we have a sentence that, upon cursory inspection, is well formatted AND might
+    // hold navigational data, continue to parse the sentence. If the GPS device
+    // hasn't found any satellites yet, we'll want to bail out.
+  
+     if (!command_OK) 
+       {
+
+       if(GPSECHO_GPS_query) 
+         {Serial.println("GPS sentence isn't a navigational information sentence.");        
+       }
+
+      return -1;        
+      }
+      
+    //////////////////////////////////////////////////////////////////////
+    /////////////////////////// GPRMC sentence ///////////////////////////
+    //////////////////////////////////////////////////////////////////////
+    
+     if (data_OK && GPS_command.equals("$GPRMC"))
+        {
+            
+        if(GPSECHO_GPS_query) 
+          {
+          Serial.print("\nnew GPS sentence: "); Serial.println(GPS_sentence_string);
+          }
+    
+        // parse the time
+        GPS_hour_string = GPS_sentence_string.substring(GPRMC_hour_index1, GPRMC_hour_index2);
+        GPS_minutes_string = GPS_sentence_string.substring(GPRMC_minutes_index1, GPRMC_minutes_index2);
+        GPS_seconds_string = GPS_sentence_string.substring(GPRMC_seconds_index1, GPRMC_seconds_index2);
+        GPS_milliseconds_string = GPS_sentence_string.substring(GPRMC_milliseconds_index1, 
+        GPRMC_milliseconds_index2);
+        GPS_AV_code_string = GPS_sentence_string.substring(GPRMC_AV_code_index1, GPRMC_AV_code_index2);
+    
+        GPS_hour = GPS_hour_string.toInt();
+        GPS_minutes = GPS_minutes_string.toInt();
+        GPS_seconds = GPS_seconds_string.toInt();
+        GPS_milliseconds = GPS_milliseconds_string.toInt();
+    
+        if(GPSECHO_GPS_query)
+          {
+          Serial.print("Time (UTC) = "); Serial.print(GPS_hour); Serial.print(":");
+          Serial.print(GPS_minutes); Serial.print(":");
+          Serial.print(GPS_seconds); Serial.print(".");
+          Serial.println(GPS_milliseconds);
+          Serial.print("A/V code is "); Serial.println(GPS_AV_code_string);
+          }
+    
+        // now see if the data are valid: we'll expect an "A" as the AV code string.
+        // We also expect an asterisk two characters from the end. Also check that the sentence 
+        // is at least as long as the minimum length expected.
+    
+        data_OK = GPS_AV_code_string == "A";
+    
+        // now look for the asterisk after trimming any trailing whitespace in the GPS sentence.
+        // the asterisk preceeds the sentence's checksum information, which I won't bother to check.
+        // int asterisk_should_be_here = GPS_sentence_string.length() - 4; 
+        int asterisk_should_be_here = GPS_sentence_string.length() - asterisk_backup; 
+    
+        data_OK = data_OK && (GPS_sentence_string.charAt(asterisk_should_be_here) == '*');
+
+        if(GPSECHO_GPS_query)
+          {
+          Serial.print("expected asterisk position "); Serial.print(asterisk_should_be_here); 
+          Serial.print(" at that position: "); Serial.println(GPS_sentence_string.charAt(asterisk_should_be_here));
+          }
+    
+        // now check that the sentence is not too short.      
+        data_OK = data_OK && (GPS_sentence_string.length() >= GPSMINLENGTH);
+    
+        if (!data_OK) 
+          {
+
+          if (GPSECHO_GPS_query)
+            {
+            Serial.print("GPS sentence not good for navigation: "); Serial.println(GPS_sentence_string);
+            Serial.println("I will keep trying...");
+            }
+
+          return -1;        
+  
+          }
+                
+        // so far so good, so keep going...
+        
+        // now parse latitude 
+        
+        GPS_latitude_1_string = GPS_sentence_string.substring(GPRMC_latitude_1_index1, 
+        GPRMC_latitude_1_index2);
+        GPS_latitude_2_string = GPS_sentence_string.substring(GPRMC_latitude_2_index1, 
+        GPRMC_latitude_2_index2);
+        GPS_latitude_NS_string = GPS_sentence_string.substring(GPRMC_latitude_NS_index1, 
+        GPRMC_latitude_NS_index2);
+    
+        GPS_latitude_1 = GPS_latitude_1_string.toInt();      
+        GPS_latitude_2 = GPS_latitude_2_string.toInt();      
+    
+        if(GPSECHO_GPS_query)
+          {
+          Serial.print("Latitude x 100 = "); Serial.print(GPS_latitude_1); Serial.print(".");
+          Serial.print(GPS_latitude_2); Serial.println(GPS_latitude_NS_string);
+          }
+          
+        // now parse longitude 
+        
+        GPS_longitude_1_string = GPS_sentence_string.substring(GPRMC_longitude_1_index1, GPRMC_longitude_1_index2);
+        GPS_longitude_2_string = GPS_sentence_string.substring(GPRMC_longitude_2_index1, GPRMC_longitude_2_index2);
+        GPS_longitude_EW_string = GPS_sentence_string.substring(GPRMC_longitude_EW_index1, GPRMC_longitude_EW_index2);
+    
+        GPS_longitude_1 = GPS_longitude_1_string.toInt();      
+        GPS_longitude_2 = GPS_longitude_2_string.toInt();      
+          
+        if(GPSECHO_GPS_query)
+          {
+          Serial.print("Longitude x 100 = "); Serial.print(GPS_longitude_1); Serial.print(".");
+          Serial.print(GPS_longitude_2); Serial.println(GPS_longitude_EW_string); 
+          }
+    
+        // now parse speed and direction. we'll need to locate the 7th and 8th commas in the
+        // data sentence to do this. so use the indexOf function to find them.
+        // it returns -1 if string wasn't found. the number of digits is not uniquely defined 
+        // so we need to find the fields based on the commas separating them from others.
+        
+        int comma_A_index = GPRMC_longitude_EW_index2;
+        int comma_B_index = GPS_sentence_string.indexOf(",", comma_A_index + 1);
+        int comma_C_index = GPS_sentence_string.indexOf(",", comma_B_index + 1);
+    
+        GPS_speed_knots_string = GPS_sentence_string.substring(comma_A_index + 1, comma_B_index); 
+        GPS_direction_string = GPS_sentence_string.substring(comma_B_index + 1, comma_C_index); 
+        
+        GPS_speed_knots = GPS_speed_knots_string.toFloat();
+        GPS_direction = GPS_direction_string.toFloat();
+    
+        if(GPSECHO_GPS_query)
+          {
+          Serial.print("Speed (knots) = "); Serial.println(GPS_speed_knots);
+          Serial.print("Direction (degrees) = "); Serial.println(GPS_direction);
+          }
+          
+        // now get the (UTC) date, in format DDMMYY, e.g. 080618 for 8 June 2018.
+        GPS_date_string = GPS_sentence_string.substring(comma_C_index+ + 1, comma_C_index + 7);
+        
+        if(GPSECHO_GPS_query)
+          {
+          Serial.print("date, in format ddmmyy = "); Serial.println(GPS_date_string);    
+          }
+
+        // print a summary of the data and parsed results:
+        if(GPSECHO_GPS_query)
+          {
+          Serial.print("GPS sentence: "); Serial.println(GPS_sentence_string);
+
+          Serial.print("Time (UTC) = "); Serial.print(GPS_hour); Serial.print(":");
+          Serial.print(GPS_minutes); Serial.print(":");
+          Serial.print(GPS_seconds); Serial.print(".");
+          Serial.println(GPS_milliseconds);
+        
+          Serial.print("Latitude x 100 = "); Serial.print(GPS_latitude_1); Serial.print(".");
+          Serial.print(GPS_latitude_2); Serial.print(" "); Serial.print(GPS_latitude_NS_string);
+
+          Serial.print("    Longitude x 100 = "); Serial.print(GPS_longitude_1); Serial.print(".");
+          Serial.print(GPS_longitude_2); Serial.print(" "); Serial.println(GPS_longitude_EW_string); 
+
+          Serial.print("Speed (knots) = "); Serial.print(GPS_speed_knots);
+          Serial.print("     Direction (degrees) = "); Serial.println(GPS_direction);
+
+          Serial.println("There is no satellite or altitude information in a GPRMC data sentence.");
+              
+          }
+      
+        // all done with this sentence, so return.
+        return 0;
+          
+        }  // end of "if (data_OK && GPS_command.equals("$GPRMC"))" block
+
+    //////////////////////////////////////////////////////////////////////
+    /////////////////////////// GPGGA sentence ///////////////////////////
+    //////////////////////////////////////////////////////////////////////
+    
+      if (data_OK && GPS_command.equals("$GPGGA"))
+        {
+
+        if(GPSECHO_GPS_query) 
+          {
+          Serial.print("\nnew GPS sentence: "); Serial.println(GPS_sentence_string);
+          }
+    
+        // parse the time
+    
+        GPS_hour_string = GPS_sentence_string.substring(GPGGA_hour_index1, GPGGA_hour_index2);
+        GPS_minutes_string = GPS_sentence_string.substring(GPGGA_minutes_index1, GPGGA_minutes_index2);
+        GPS_seconds_string = GPS_sentence_string.substring(GPGGA_seconds_index1, GPGGA_seconds_index2);
+        GPS_milliseconds_string = GPS_sentence_string.substring(GPGGA_milliseconds_index1, 
+        GPGGA_milliseconds_index2);
+    
+        GPS_hour = GPS_hour_string.toInt();
+        GPS_minutes = GPS_minutes_string.toInt();
+        GPS_seconds = GPS_seconds_string.toInt();
+        GPS_milliseconds = GPS_milliseconds_string.toInt();
+    
+        if(GPSECHO_GPS_query)
+          {
+          Serial.print("Time (UTC) = "); Serial.print(GPS_hour); Serial.print(":");
+          Serial.print(GPS_minutes); Serial.print(":");
+          Serial.print(GPS_seconds); Serial.print(".");
+          Serial.println(GPS_milliseconds);
+          }
+    
+        // now get the fix quality and number of satellites.
+    
+        GPS_fix_quality_string = GPS_sentence_string.substring(GPGGA_fix_quality_index1, 
+        GPGGA_fix_quality_index2);
+        GPS_satellites_string = GPS_sentence_string.substring(GPGGA_satellites_index1, 
+        GPGGA_satellites_index2);
+    
+        GPS_fix_quality = GPS_fix_quality_string.toInt();      
+        GPS_satellites = GPS_satellites_string.toInt();      
+    
+        if(GPSECHO_GPS_query)
+          {
+          Serial.print("fix quality (1 for GPS, 2 for DGPS) = "); Serial.println(GPS_fix_quality);
+          Serial.print("number of satellites = "); Serial.println(GPS_satellites);
+          }
+    
+        // now see if the data are valid: we'll expect a fix, and at least three satellites.
+    
+        bool data_OK = (GPS_fix_quality > 0) && (GPS_satellites >= 3); 
+    
+        // now look for the asterisk.
+        // int asterisk_should_be_here = GPS_sentence_string.length() - 4; 
+        int asterisk_should_be_here = GPS_sentence_string.length() - asterisk_backup; 
+    
+        data_OK = data_OK && (GPS_sentence_string.charAt(asterisk_should_be_here) == '*');
+    
+        // now check that the sentence is not too short.      
+        data_OK = data_OK && (GPS_sentence_string.length() >= GPSMINLENGTH);
+
+        if (!data_OK) 
+          {
+           
+          if (GPSECHO_GPS_query)
+            {
+            Serial.print("GPS sentence not good for navigation: "); Serial.println(GPS_sentence_string);
+            Serial.println("I will keep trying...");
+            }
+          }
+    
+        // if data are not good, go back to the top of the loop by breaking out of this if block.
+        
+        if (!data_OK) break;
+            
+        // so far so good, so keep going...
+        
+        // now parse latitude 
+        
+        GPS_latitude_1_string = GPS_sentence_string.substring(GPGGA_latitude_1_index1, 
+        GPGGA_latitude_1_index2);
+        GPS_latitude_2_string = GPS_sentence_string.substring(GPGGA_latitude_2_index1, 
+        GPGGA_latitude_2_index2);
+        GPS_latitude_NS_string = GPS_sentence_string.substring(GPGGA_latitude_NS_index1, 
+        GPGGA_latitude_NS_index2);
+    
+        GPS_latitude_1 = GPS_latitude_1_string.toInt();      
+        GPS_latitude_2 = GPS_latitude_2_string.toInt();      
+    
+        if(GPSECHO_GPS_query)
+          {
+          Serial.print("Latitude x 100 = "); Serial.print(GPS_latitude_1); Serial.print(".");
+          Serial.print(GPS_latitude_2); Serial.println(GPS_latitude_NS_string);
+          }
+          
+        // now parse longitude 
+        
+        GPS_longitude_1_string = GPS_sentence_string.substring(GPGGA_longitude_1_index1, 
+        GPGGA_longitude_1_index2);
+        GPS_longitude_2_string = GPS_sentence_string.substring(GPGGA_longitude_2_index1, 
+        GPGGA_longitude_2_index2);
+        GPS_longitude_EW_string = GPS_sentence_string.substring(GPGGA_longitude_EW_index1, 
+        GPGGA_longitude_EW_index2);
+    
+        GPS_longitude_1 = GPS_longitude_1_string.toInt();      
+        GPS_longitude_2 = GPS_longitude_2_string.toInt();      
+    
+        if(GPSECHO_GPS_query)
+          {         
+          Serial.print("Longitude x 100 = "); Serial.print(GPS_longitude_1); Serial.print(".");
+          Serial.print(GPS_longitude_2); Serial.println(GPS_longitude_EW_string); 
+          }
+          
+        // let's skip the "horizontal dilution" figure and go straight for the altitude now.
+        // this begins two fields to the right of the num,ber of satellites so find this
+        // by counting commas. use the indexOf function to find them.
+        int comma_A_index = GPS_sentence_string.indexOf(",", GPGGA_satellites_index2 + 1);
+        int comma_B_index = GPS_sentence_string.indexOf(",", comma_A_index + 1);
+    
+        GPS_altitude_string = GPS_sentence_string.substring(comma_A_index + 1, comma_B_index); 
+        
+        GPS_altitude = GPS_altitude_string.toFloat();
+    
+        if(GPSECHO_GPS_query)
+          {
+          Serial.print("Altitude (meters) = "); Serial.println(GPS_altitude);
+          }
+
+        // print a summary of the data and parsed results:
+        if(GPSECHO_GPS_query)
+          {
+          Serial.print("GPS sentence: "); Serial.println(GPS_sentence_string);
+
+          Serial.print("Time (UTC) = "); Serial.print(GPS_hour); Serial.print(":");
+          Serial.print(GPS_minutes); Serial.print(":");
+          Serial.print(GPS_seconds); Serial.print(".");
+          Serial.println(GPS_milliseconds);
+        
+          Serial.print("Latitude x 100 = "); Serial.print(GPS_latitude_1); Serial.print(".");
+          Serial.print(GPS_latitude_2); Serial.print(" "); Serial.print(GPS_latitude_NS_string);
+
+          Serial.print("    Longitude x 100 = "); Serial.print(GPS_longitude_1); Serial.print(".");
+          Serial.print(GPS_longitude_2); Serial.print(" "); Serial.println(GPS_longitude_EW_string); 
+
+          Serial.print("Speed (knots) = "); Serial.print(GPS_speed_knots);
+          Serial.print("     Direction (degrees) = "); Serial.println(GPS_direction);
+
+          Serial.print("Number of satellites: "); Serial.print(GPS_satellites);
+          Serial.print("       Altitude (meters): "); Serial.println(GPS_altitude);
+              
+          }
+       
+        // all done with this sentence, so return.
+        return 0;
+       
+      }   // end of "if (data_OK && GPS_command.equals("$GPGGA"))" block
+  
+    // we'll fall through to here (instead of returning) when we've read a complete 
+    // sentence, but it doesn't have navigational information (for example, an antenna 
+    // status record).
+    
+    } 
+
+  }
 
 /////////////////////////////////////////////////////////////////////////
 
