@@ -20,7 +20,7 @@ String BMEwrapper::collectBME()
 
   data += String(bme.temperature) + ",";
   data += String(bme.pressure / 100) + ",";
-  data += String(bme.humidity) + ",";
+  data += String(bme.humidity);
 
   return data + '\n';
 }

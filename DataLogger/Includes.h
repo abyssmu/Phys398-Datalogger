@@ -39,6 +39,7 @@ BMEwrapper bme;
 //names of the data files
 #define BMEFILE "bme"
 #define GPSFILE "gps"
+#define METAFILE "met"
 
 //variables for sd
 const int chipSelect = 53;
