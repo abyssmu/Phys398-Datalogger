@@ -33,24 +33,24 @@ BMEwrapper bme;
 #define LIST "98#" //list all commands on LCD
 #define CLEAR "***" //clears LCD screen
 
-#define LOOPTIMES 5 //number of times to loop through data in seconds
+#define LOOPTIMES 1 //number of times to loop through data in seconds
 #define DATAPERSECOND 1 //number of times to gather data in one second
 
 //names of the data files
 #define BMEFILE "bme"
 #define GPSFILE "gps"
 #define METAFILE "met"
+#define AUDIOFILE "aud"
 
 //variables for sd
 const int chipSelect = 53;
 
 //function declarations for sd
-bool initSD();
 int findNextFile(String filename);
 void printSD(String filename);
 void writeSD(String filename, String data);
 
-void logData();
+void logAudio();
 void audioSetup();
 void audioLoop();
 void adcInit(metadata_t* meta);
@@ -59,13 +59,22 @@ void adcStop();
 void checkOverrun();
 void dumpData();
 
+void bump_by_1_sec(void);
+void gpsLoop();
+void gpsSetup();
+int gpsQuery();
+
 /////////////////// Arduino ADC parameters ///////////////////
 
 // Analog pin number list for a sample.  Pins may be in any order and pin
 // numbers may be repeated. My version: just use A7.
 // const uint8_t PIN_LIST[ ] = {0, 1, 2, 3, 4};
 // microphone amplifier to A7.
+//Womack pin
 const uint8_t PIN_LIST[ ] = {0};
+
+//Logger pin
+//const uint8_t PIN_LIST[ ] = {7};
 
 // ADC sample rate in samples per second; must be 0.25 or greater.
 const float SAMPLE_RATE = 32000;
@@ -305,7 +314,9 @@ SdBaseFile binFile;
 RTC_DS3231 rtc;
 
 // declare which Arduino pin sees the GPS PPS signal
-int GPS_PPS_pin = 43;
+int GPS_PPS_PIN = 43;
+uint8_t myPin_mask;
+volatile uint8_t *myPin_port;
 
 // Which hardware serial port shall we use? Let's use the second. Why? Who knows?
 #define GPSSerial Serial2
@@ -463,25 +474,10 @@ char daysOfTheWeek[7][12] = {"Sunday", "Monday", "Tuesday", "Wednesday",
 unsigned long t_new_sentence;
 unsigned long t_end_of_sentence;
 
-bool GPSECHO_loop = true;
-
-// a "function prototype" so I can put the actual function at the end of the file:
-void bump_by_1_sec(void);
-void gpsLoop();
-void gpsSetup();
-int gpsQuery();
-
 // a counter
 int i_am_so_bored;
 
 /////////////////////////////////////////////////////////////////////////
-
-// Set GPSECHO_GPS_query to 'false' to turn off echoing the GPS data to the Serial console  
-// from the GPS_query function. (Set it to true when debugging.)
-#define GPSECHO_GPS_query true
-
-// a similar debugging flag for loop():
-#define GPSECHO_loop true
 
 // also define some more stuff relating to update rates. See 
 // https://blogs.fsfe.org/t.kandler/2013/11/17/set-gps-update-

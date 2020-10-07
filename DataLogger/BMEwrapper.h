@@ -5,7 +5,6 @@
 
 #define SEALEVELPRESSURE_HPA (1013.25) //atmospheric pressure at sea level
 
-//This is the class that controls the BME680.
 class BMEwrapper
 {
   private:

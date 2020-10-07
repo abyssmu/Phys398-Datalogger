@@ -71,10 +71,9 @@ import matplotlib.pyplot as plt
 # change the file names to suit your needs.
 
 # Here's the name of the audio file.
-num="00"
-folder = "Audio Bins\\"
+num="03"
 textName = "audio"+num
-filename = folder + textName + '.bin'
+filename = textName + '.bin'
 #filename = textName + '.bin'
 
 # wav filename
@@ -106,17 +105,6 @@ start_time = time.time()
 
 # call routine to read the audio file. 
 audio_data = RA.read_audio(filename, max_buffers)
-audio_data = audio_data[32000 * 30 : 32000 * 39]
-
-# plot with rate=32000samples/sec
-plt.plot(audio_data)
-ax=plt.gca()
-ticks = ax.get_xticks()/wav_sample_rate
-ax.set_xticklabels(ticks)
-plt.ylabel("Amplitude")
-plt.xlabel("Time [sec]")
-plt.savefig(num+'.png')
-plt.show()
 
 # now all those ADC samples live in the audio_data array. 
 print("ending time is ", time.ctime())
