@@ -71,7 +71,7 @@ import matplotlib.pyplot as plt
 # change the file names to suit your needs.
 
 # Here's the name of the audio file.
-num="03"
+num="00"
 textName = "audio"+num
 filename = textName + '.bin'
 #filename = textName + '.bin'
