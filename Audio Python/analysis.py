@@ -5,54 +5,71 @@ from scipy.signal import argrelextrema as arg
 from scipy.signal import find_peaks
 import p398dlp_read_audio_function as RA
 
-"""
-num="20"
-textName = "audio"+num
-filename = textName + '.bin'
-max_buffers = 5000
-audio= RA.read_audio(filename, max_buffers)
-"""
+def getMicros(filename):
+	text = open(filename, 'r').read().split("\n")[3].split(',')
 
-#reads in the sample rate and data from the wave file as a buffer array
-sampleRate, audio = wave.read("audio20.wav")
-sampleRate=32000
-#filter first 15 sec
-data = np.frombuffer(audio[:sampleRate*15], dtype=np.int16)[100:-100]
-#data = audio[:sampleRate*15]
+	hours = int(text[0])
+	minutes = int(text[1])
+	seconds = int(text[2])
+	micros = int(text[3])
 
+	microsInSec = 1e6
+	microsInHour = 3600 * microsInSec
+	microsInMin = 60 * microsInSec
 
-#filter the peaks along the audio signal
-peaks = find_peaks(data, height=np.mean(data)+6*np.std(data), distance=5000)[0]
-print("the first peak is at", peaks[0]/sampleRate, "seconds") # the first peak location
+	time = microsInHour * hours + microsInMin * minutes + microsInSec * seconds + micros
 
+	return time
 
-fig=plt.figure(figsize=(8,10))
-ax1=plt.subplot(2,1,1)
-ax2=plt.subplot(2,1,2)
-#plots the audio signal
-plt.sca(ax1)
-plt.plot(data)
-plt.ylabel("Amplitude")
-ticks = ax1.get_xticks()/sampleRate
-ax1.set_xticklabels(ticks)
-plt.xlabel("Time [sec]")
-#plots the peaks of signal_1
-y = [data[i] for i in peaks]
-plt.plot(peaks, y, 'ro',color='r')
+def adjustMicros(filename):
+	time = open(filename, 'r').read().split("\n")
+	time = [x for x in time if x != '']
 
+	baseline = int(time[0])
+	for t in range(len(time)):
+		time[t] = int(time[t]) - baseline
 
-#zoom in starting point
-plt.sca(ax2)
-plt.ylabel("Amplitude")
-plt.xlabel("Samples")
-sampleRange=int(sampleRate/100)
-sample=data[peaks[0]-sampleRange:peaks[0]+sampleRange*2]
-plt.plot(sample)
-plt.plot(sampleRange,data[peaks[0]],'ro',label="starting peak at {} sec.".format(peaks[0]/sampleRate))
-plt.legend()
+	return time
 
-plt.tight_layout()
-plt.legend()
-plt.savefig('0.png')
-plt.show()
+def calculateTimeAdjust(senderMicros, receiverMicros, senderAjust):
+	
 
+	return 
+
+folder = "Sean_Shunyue_Data\\"
+receiverName = "receiver"
+senderName = "sender"
+
+audioTimeText = "AudioTime.txt"
+timeText = "Time.txt"
+
+receiverMicros = getMicros(folder + receiverName + timeText)
+senderMicros = getMicros(folder + senderName + timeText)
+
+senderAdjust = adjustMicros(folder + senderName + audioTimeText)
+
+dT = calculateTimeAdjust(senderMicros, receiverMicros, senderAdjust)
+
+# receiverFile = folder + receiverName + ".wav"
+# sampleRate, audio = wave.read(receiverFile)
+# receiverData = np.frombuffer(audio, dtype = np.int16)
+
+# receiverStart = int(dT * sampleRate)
+# receiverData = receiverData[receiverStart :]
+
+# senderFile = folder + senderName + ".wav"
+# sampleRate, audio = wave.read(senderFile)
+# senderData = np.frombuffer(audio, dtype = np.int16)
+
+# senderStart = int(dT * sampleRate)
+# senderData = senderData[senderStart :]
+
+# fig, (a1, a2) = plt.subplots(2, 1)
+
+# a1.plot(receiverData)
+# a1.set_title("Receiver")
+
+# a2.plot(senderData)
+# a2.set_title("Sender")
+
+# plt.show()

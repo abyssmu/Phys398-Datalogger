@@ -11,14 +11,14 @@ int dT = 0;
 String collectBME()
 {
   // time difference between data collection
-  int dT = 1000 / DATAPERSECOND;
+  int mils = 1000 / DATAPERSECOND;
 
   String data = "";
 
   for (int i = 0; i < LOOPTIMES; ++i)
   {
     data += bme.collectBME();
-    delay(dT);
+    delay(mils);
   }
 
   return data;

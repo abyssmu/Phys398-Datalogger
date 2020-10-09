@@ -1,0 +1,4 @@
+ddmmyy
+091020
+hh,mm,ss,micros
+20,50,58,828

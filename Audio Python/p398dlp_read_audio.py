@@ -71,10 +71,10 @@ import matplotlib.pyplot as plt
 # change the file names to suit your needs.
 
 # Here's the name of the audio file.
-num="00"
+num="07"
 textName = "audio"+num
 filename = textName + '.bin'
-#filename = textName + '.bin'
+#filename = "receiver.bin"
 
 # wav filename
 wav_filename = textName + '.wav'
@@ -84,7 +84,7 @@ wav_filename = textName + '.wav'
 
 # number of buffers to read (my code checks for running out of data)
 #max_buffers =   50000000
-max_buffers =   5000
+max_buffers =   500000
 
 # write a WAV-format audio file?
 write_wav = True
