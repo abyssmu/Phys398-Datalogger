@@ -44,12 +44,7 @@ senderMicros = getAudioMicros(senderName + timeText)
 receiverAdjust = adjustMicros(receiverName + audioTimeText)
 senderAdjust = adjustMicros(senderName + audioTimeText)
 
-receiverTime = receiverMicros + receiverAdjust
-senderTime = senderMicros + senderAdjust
-
-timeAdjust = int((senderTime - receiverTime) / 1e6 * 32000)
-
-print(timeAdjust)
+timeAdjust = int(((receiverMicros - senderMicros) + (receiverAdjust - senderAdjust)) / 1e6 * 32000)
 
 receiverFile = receiverName + ".wav"
 sampleRate, audio = wave.read(receiverFile)
@@ -62,6 +57,11 @@ senderFile = senderName + ".wav"
 sampleRate, audio = wave.read(senderFile)
 senderData = np.frombuffer(audio, dtype = np.int16)
 
+senderData = senderData.tolist()
+
+for i in range(timeAdjust):
+	senderData.insert(0, 0)
+
 # senderStart = int(dT * sampleRate)
 # senderData = senderData[senderStart :]
 
@@ -73,8 +73,8 @@ senderData = np.frombuffer(audio, dtype = np.int16)
 # a2.plot(senderData)
 # a2.set_title("Sender")
 
-plt.plot(receiverData, 'r', label = "receiver")
-plt.plot(senderData, 'b', label = "sender", alpha = 0.5)
+plt.plot(receiverData[100000:], 'r', label = "receiver")
+plt.plot(senderData[100000:], 'b', label = "sender", alpha = 0.5)
 
 plt.legend(loc = 'upper right')
 

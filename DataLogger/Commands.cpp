@@ -70,8 +70,8 @@ String collectGPS()
 
   String data = "";
 
-  data += String(GPS_latitude_1) + "." + String(GPS_latitude_1) + "W, ";
-  data += String(GPS_longitude_1) + "." + String(GPS_longitude_2) + "N";
+  data += String(GPS_latitude_1) + "." + String(GPS_latitude_1) + "N, ";
+  data += String(GPS_longitude_1) + "." + String(GPS_longitude_2) + "W";
 
   return data;
 }
