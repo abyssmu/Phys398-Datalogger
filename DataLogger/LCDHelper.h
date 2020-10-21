@@ -41,7 +41,7 @@ void listcmd()
   loopcmds("4# Read GPS");
   loopcmds("5# Write GPS");
 
-  loopcmds("7# Record Audio");
+  loopcmds("7# Test Drift");
   loopcmds("8# Data Collect");
 
   loopcmds("51# Print BME");

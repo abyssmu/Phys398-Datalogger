@@ -5,7 +5,7 @@ from scipy.signal import argrelextrema as arg
 from scipy.signal import find_peaks
 import p398dlp_read_audio_function as RA
 
-def getMicros(filename):
+def getAudioMicros(filename):
 	text = open(filename, 'r').read().split("\n")[3].split(',')
 
 	hours = int(text[0])
@@ -29,37 +29,38 @@ def adjustMicros(filename):
 	for t in range(len(time)):
 		time[t] = int(time[t]) - baseline
 
-	return time
-
-def calculateTimeAdjust(senderMicros, receiverMicros, senderAjust):
-	
-
-	return 
+	return time[1]
 
 folder = "Sean_Shunyue_Data\\"
-receiverName = "receiver"
-senderName = "sender"
+receiverName = folder + "receiver"
+senderName = folder + "sender"
 
 audioTimeText = "AudioTime.txt"
 timeText = "Time.txt"
 
-receiverMicros = getMicros(folder + receiverName + timeText)
-senderMicros = getMicros(folder + senderName + timeText)
+receiverMicros = getAudioMicros(receiverName + timeText)
+senderMicros = getAudioMicros(senderName + timeText)
 
-senderAdjust = adjustMicros(folder + senderName + audioTimeText)
+receiverAdjust = adjustMicros(receiverName + audioTimeText)
+senderAdjust = adjustMicros(senderName + audioTimeText)
 
-dT = calculateTimeAdjust(senderMicros, receiverMicros, senderAdjust)
+receiverTime = receiverMicros + receiverAdjust
+senderTime = senderMicros + senderAdjust
 
-# receiverFile = folder + receiverName + ".wav"
-# sampleRate, audio = wave.read(receiverFile)
-# receiverData = np.frombuffer(audio, dtype = np.int16)
+timeAdjust = int((senderTime - receiverTime) / 1e6 * 32000)
+
+print(timeAdjust)
+
+receiverFile = receiverName + ".wav"
+sampleRate, audio = wave.read(receiverFile)
+receiverData = np.frombuffer(audio, dtype = np.int16)
 
 # receiverStart = int(dT * sampleRate)
 # receiverData = receiverData[receiverStart :]
 
-# senderFile = folder + senderName + ".wav"
-# sampleRate, audio = wave.read(senderFile)
-# senderData = np.frombuffer(audio, dtype = np.int16)
+senderFile = senderName + ".wav"
+sampleRate, audio = wave.read(senderFile)
+senderData = np.frombuffer(audio, dtype = np.int16)
 
 # senderStart = int(dT * sampleRate)
 # senderData = senderData[senderStart :]
@@ -72,4 +73,9 @@ dT = calculateTimeAdjust(senderMicros, receiverMicros, senderAdjust)
 # a2.plot(senderData)
 # a2.set_title("Sender")
 
-# plt.show()
+plt.plot(receiverData, 'r', label = "receiver")
+plt.plot(senderData, 'b', label = "sender", alpha = 0.5)
+
+plt.legend(loc = 'upper right')
+
+plt.show()

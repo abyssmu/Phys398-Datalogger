@@ -4,9 +4,49 @@ File audioT;
 String currAudioNum = "";
 String timeData = "";
 String audioData = "";
+String driftData = "";
 int microStart = 0;
 int microEnd = 0;
 int dT = 0;
+
+float testDrift()
+{
+  uint32_t tstart;
+  uint32_t tstop;
+
+  uint32_t idummy = 0;
+  uint32_t jdummy = 0;
+  uint32_t kdummy = 0;
+
+  float ii;
+  float jj;
+  float kk;
+
+  const uint32_t loop_max = 100000;
+  
+  // record starting time (microseconds)
+  tstart = micros();
+
+  for (uint32_t loop_index = 0; loop_index < loop_max; loop_index++)
+  {
+    idummy++;
+    jdummy++;
+    kdummy++;
+
+    ii = sqrt(idummy);
+    jj = sqrt(jdummy);
+    kk = sqrt(kdummy);
+  }
+
+  // record stopping time (microseconds)
+  tstop = micros();
+
+  Serial.print(ii);
+  Serial.print(jj);
+  Serial.println(kk);
+  
+  return (tstop - tstart) / 1000000.0;
+}
 
 String collectBME()
 {
@@ -66,17 +106,29 @@ String collectTime()
 
 void CmdCenter::collectData()
 {
-  writeSD(BMEFILE, collectBME());
-  writeSD(GPSFILE, collectGPS());
+  printLCD("Test Drift");
+  driftData += testDrift();
   
+  printLCD("Collect BME");
+  writeSD(BMEFILE, collectBME());
+
+  printLCD("Collect GPS");
+  writeSD(GPSFILE, collectGPS());
+
+  printLCD("Wait for PPS");
   while (!(*myPin_port & myPin_mask)) {}
   writeSD(METAFILE, collectTime());
-  
-  audioData += String(micros()) + "\n";
+
+  printLCD("Record Audio");
   logAudio();
   writeSD(AUDIOFILE, audioData);
 
+  printLCD("Test Drift");
+  driftData += testDrift();
+  writeSD(DRIFTFILE, driftData);
+
   audioData = "";
+  driftData = "";
 }
 
 bool CmdCenter::init()
@@ -166,8 +218,8 @@ bool CmdCenter::runCmd()
       return true;
 
     case 7:
-      logAudio();
-      cmd = "Record";
+      Serial.println(testDrift());
+      cmd = "Test Drift";
       return true;
 
     case 8:

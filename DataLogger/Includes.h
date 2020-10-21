@@ -41,6 +41,7 @@ BMEwrapper bme;
 #define GPSFILE "gps"
 #define METAFILE "met"
 #define AUDIOFILE "aud"
+#define DRIFTFILE "dri"
 
 //variables for sd
 const int chipSelect = 53;
