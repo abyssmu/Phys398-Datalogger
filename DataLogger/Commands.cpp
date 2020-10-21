@@ -100,7 +100,8 @@ String collectTime()
   dT = microEnd - microStart;
 
   timeData += String(dT);
-
+  audioData += microEnd;
+  
   return timeData;
 }
 
