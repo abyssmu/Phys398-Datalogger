@@ -9,6 +9,8 @@ int microStart = 0;
 int microEnd = 0;
 int dT = 0;
 
+bool ppsDetected = false;
+
 float testDrift()
 {
   uint32_t tstart;
@@ -100,7 +102,6 @@ String collectTime()
   dT = microEnd - microStart;
 
   timeData += String(dT);
-  audioData += microEnd;
   
   return timeData;
 }
@@ -108,7 +109,7 @@ String collectTime()
 void CmdCenter::collectData()
 {
   printLCD("Test Drift");
-  driftData += testDrift();
+  driftData += String(testDrift()) + '\n';
   
   printLCD("Collect BME");
   writeSD(BMEFILE, collectBME());
@@ -117,15 +118,17 @@ void CmdCenter::collectData()
   writeSD(GPSFILE, collectGPS());
 
   printLCD("Wait for PPS");
-  while (!(*myPin_port & myPin_mask)) {}
+  while (!ppsDetected) { gpsLoop(); }
+  audioData += String(micros()) + '\n';
   writeSD(METAFILE, collectTime());
+  ppsDetected = false;
 
   printLCD("Record Audio");
   logAudio();
   writeSD(AUDIOFILE, audioData);
 
   printLCD("Test Drift");
-  driftData += testDrift();
+  driftData += String(testDrift()) + '\n';
   writeSD(DRIFTFILE, driftData);
 
   audioData = "";
@@ -219,13 +222,14 @@ bool CmdCenter::runCmd()
       return true;
 
     case 7:
-      Serial.println(testDrift());
-      cmd = "Test Drift";
+      if (displayTime) displayTime = false;
+      else displayTime = true;
+      cmd = "Display Time";
       return true;
 
     case 8:
       collectData();
-      cmd = "Collect Data";
+      cmd = "Finished";
       return true;
 
     case 51:
@@ -247,8 +251,14 @@ bool CmdCenter::runCmd()
       return true;
 
     case 97:
-      sd.begin(SD_CS_PIN, SD_SCK_MHZ(50));
-      cmd = "Reboot SD";
+      if (!sd.begin(SD_CS_PIN, SD_SCK_MHZ(50)))
+      {
+        cmd = "SD error";
+      }
+      else
+      {
+        cmd = "Reboot SD";
+      }
       return true;
 
     case 98:
@@ -800,7 +810,7 @@ void logAudio()
     }
   } // end of while(1) block
 
-  audioData += String(micros()) + "\n";
+  audioData += String(micros());
 
   if (!sd.card()->writeStop()) error("writeStop failed");
 
@@ -863,14 +873,6 @@ void gpsSetup()
 
 void gpsLoop()
 {
-  if (time_to_quit)
-  {
-    // increment a counter
-    i_am_so_bored++;
-    
-    return;
-  }
-
   gpsQuery();
 
   GPS_PPS_value = (*myPin_port & myPin_mask);
@@ -878,6 +880,8 @@ void gpsLoop()
   // did we just get a 0 -> 1 transition?
   if (GPS_PPS_value >= 1 && GPS_PPS_value_old == 0)
   {
+    ppsDetected = true;
+    
     Serial.print("\nJust saw a PPS 0 -> 1 transition at time (ms) = ");
     t_GPS_PPS = millis();
     Serial.println(t_GPS_PPS);
@@ -907,8 +911,18 @@ void gpsLoop()
 
       if (ILikeIt) consecutive_good_sets_so_far++;
       else consecutive_good_sets_so_far = 0;
+    }
 
-      time_to_quit = consecutive_good_sets_so_far >= thats_enough;
+    if (displayTime)
+    {
+      if (GPS_seconds < 10)
+      {
+        printLCD(String(GPS_hour) + ":" + String(GPS_minutes) + ":0" + String(GPS_seconds));
+      }
+      else
+      {
+        printLCD(String(GPS_hour) + ":" + String(GPS_minutes) + ":" + String(GPS_seconds));
+      }
     }
   }
 

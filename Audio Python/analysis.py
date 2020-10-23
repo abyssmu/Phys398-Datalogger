@@ -31,12 +31,15 @@ def adjustMicros(filename):
 
 	return time[1]
 
-folder = "Sean_Shunyue_Data\\"
-receiverName = folder + "receiver"
-senderName = folder + "sender"
+folder = "AudioDistanceTest\\"
+receiverName = folder + "close_"
+senderName = folder + "dist_"
 
-audioTimeText = "AudioTime.txt"
-timeText = "Time.txt"
+num = "001"
+num2 = "01"
+
+audioTimeText = "aud-" + num + ".txt"
+timeText = "met-" + num + ".txt"
 
 receiverMicros = getAudioMicros(receiverName + timeText)
 senderMicros = getAudioMicros(senderName + timeText)
@@ -46,14 +49,14 @@ senderAdjust = adjustMicros(senderName + audioTimeText)
 
 timeAdjust = int(((receiverMicros - senderMicros) + (receiverAdjust - senderAdjust)) / 1e6 * 32000)
 
-receiverFile = receiverName + ".wav"
+receiverFile = receiverName + "audio" + num2 + ".wav"
 sampleRate, audio = wave.read(receiverFile)
 receiverData = np.frombuffer(audio, dtype = np.int16)
 
 # receiverStart = int(dT * sampleRate)
 # receiverData = receiverData[receiverStart :]
 
-senderFile = senderName + ".wav"
+senderFile = senderName + "audio" + num2 + ".wav"
 sampleRate, audio = wave.read(senderFile)
 senderData = np.frombuffer(audio, dtype = np.int16)
 
@@ -73,8 +76,8 @@ for i in range(timeAdjust):
 # a2.plot(senderData)
 # a2.set_title("Sender")
 
-plt.plot(receiverData[100000:], 'r', label = "receiver")
-plt.plot(senderData[100000:], 'b', label = "sender", alpha = 0.5)
+plt.plot(receiverData[100000:], 'r', label = "close")
+plt.plot(senderData[100000:], 'b', label = "dist", alpha = 0.5)
 
 plt.legend(loc = 'upper right')
 
