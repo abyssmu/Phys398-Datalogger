@@ -74,10 +74,10 @@ int gpsQuery();
 // const uint8_t PIN_LIST[ ] = {0, 1, 2, 3, 4};
 // microphone amplifier to A7.
 //Womack pin
-const uint8_t PIN_LIST[ ] = {0};
+//const uint8_t PIN_LIST[ ] = {0};
 
 //Logger pin
-//const uint8_t PIN_LIST[ ] = {7};
+const uint8_t PIN_LIST[ ] = {7};
 
 // ADC sample rate in samples per second; must be 0.25 or greater.
 const float SAMPLE_RATE = 32000;
