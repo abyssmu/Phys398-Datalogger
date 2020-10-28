@@ -72,10 +72,10 @@ import matplotlib.pyplot as plt
 
 # Here's the name of the audio file.
 folder = "AudioDistanceTest\\"
-num = "02"
+num = "03"
 textName = "audio" + num
 filename = folder + "dist_" + textName + '.bin'
-
+filename = "audio" + num + ".bin"
 # wav filename
 wav_filename = textName + '.wav'
 

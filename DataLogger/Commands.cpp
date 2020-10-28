@@ -9,46 +9,9 @@ int microStart = 0;
 int microEnd = 0;
 int dT = 0;
 
+long t_GPS_PPS_Last = 0;
+
 bool ppsDetected = false;
-
-float testDrift()
-{
-  uint32_t tstart;
-  uint32_t tstop;
-
-  uint32_t idummy = 0;
-  uint32_t jdummy = 0;
-  uint32_t kdummy = 0;
-
-  float ii;
-  float jj;
-  float kk;
-
-  const uint32_t loop_max = 100000;
-  
-  // record starting time (microseconds)
-  tstart = micros();
-
-  for (uint32_t loop_index = 0; loop_index < loop_max; loop_index++)
-  {
-    idummy++;
-    jdummy++;
-    kdummy++;
-
-    ii = sqrt(idummy);
-    jj = sqrt(jdummy);
-    kk = sqrt(kdummy);
-  }
-
-  // record stopping time (microseconds)
-  tstop = micros();
-
-  Serial.print(ii);
-  Serial.print(jj);
-  Serial.println(kk);
-  
-  return (tstop - tstart) / 1000000.0;
-}
 
 String collectBME()
 {
@@ -108,14 +71,13 @@ String collectTime()
 
 void CmdCenter::collectData()
 {
-  printLCD("Test Drift");
-  driftData += String(testDrift()) + '\n';
-  
   printLCD("Collect BME");
   writeSD(BMEFILE, collectBME());
 
   printLCD("Collect GPS");
   writeSD(GPSFILE, collectGPS());
+
+  driftData += "Before audio\n";
 
   printLCD("Wait for PPS");
   while (!ppsDetected) { gpsLoop(); }
@@ -127,8 +89,12 @@ void CmdCenter::collectData()
   logAudio();
   writeSD(AUDIOFILE, audioData);
 
-  printLCD("Test Drift");
-  driftData += String(testDrift()) + '\n';
+  driftData += "After audio\n";
+  for (int i = 0; i < 5; ++i)
+  {
+    while(!ppsDetected) { gpsLoop(); }
+    ppsDetected = false;
+  }
   writeSD(DRIFTFILE, driftData);
 
   audioData = "";
@@ -345,8 +311,6 @@ void audioSetup(void)
 
   // Read the first sample pin to force the ADC to initialize itself.
   analogRead(PIN_LIST[0]);
-
-  if (!sd.begin(SD_CS_PIN, SD_SCK_MHZ(50))) lcd.print("SD error.");
 }
 
 ISR(ADC_vect)
@@ -744,6 +708,8 @@ void logAudio()
 
   while (1)
   {
+    if ((*myPin_port & myPin_mask) >= 1) audioData += String(micros()) + "\n";
+    
     if (fullHead != fullTail)
     {
       // Get address of block to write.
@@ -815,14 +781,9 @@ void logAudio()
   if (!sd.card()->writeStop()) error("writeStop failed");
 
   // Truncate file if recording stopped early.
-  if (bn != FILE_BLOCK_COUNT)
-  {
-    if (!binFile.truncate(512L * bn)) error("Can't truncate file");
-  }
+  if (bn != FILE_BLOCK_COUNT) if (!binFile.truncate(512L * bn)) error("Can't truncate file");
 
   if (!binFile.rename(sd.vwd(), binName)) error("Can't rename file");
-
-  LCD_message(F("Stop recording  "), F("audio signal A7 "));
 }
 
 void gpsSetup()
@@ -869,6 +830,8 @@ void gpsSetup()
     lcd.print("RTC failed");
     while (1) {}
   }
+
+  t_GPS_PPS_Last = millis();
 }
 
 void gpsLoop()
@@ -881,10 +844,18 @@ void gpsLoop()
   if (GPS_PPS_value >= 1 && GPS_PPS_value_old == 0)
   {
     ppsDetected = true;
+
+    long newT = micros();
+    Serial.print("newT: ");
+    Serial.println(newT);
     
-    Serial.print("\nJust saw a PPS 0 -> 1 transition at time (ms) = ");
+    Serial.print("Just saw a PPS 0 -> 1 transition at time (ms) = ");
     t_GPS_PPS = millis();
     Serial.println(t_GPS_PPS);
+
+    Serial.println(newT - t_GPS_PPS_Last);
+    driftData += String(newT - t_GPS_PPS_Last) + "\n";
+    t_GPS_PPS_Last = newT;
 
     // load the previously established time values into the RTC now.
     if (good_RTC_time_from_GPS_and_satellites)

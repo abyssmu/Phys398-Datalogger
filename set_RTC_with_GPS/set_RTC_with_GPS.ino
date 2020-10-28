@@ -191,7 +191,7 @@ const int t_RTC_update___t_GPS_read_max = 1000;
 // we can wrap this up.
 int consecutive_good_sets_so_far;
 bool time_to_quit;
-const int thats_enough = 5;
+const int thats_enough = 1000;
 
 // the only kind of GPS sentence that can hold a Z, that I am allowing from the GPS,
 // will carry date/time information.

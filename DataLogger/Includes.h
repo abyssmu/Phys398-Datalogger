@@ -45,9 +45,6 @@ BMEwrapper bme;
 #define AUDIOFILE "aud"
 #define DRIFTFILE "dri"
 
-//variables for sd
-const int chipSelect = 53;
-
 //function declarations for sd
 int findNextFile(String filename);
 void printSD(String filename);
