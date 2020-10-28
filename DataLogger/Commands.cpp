@@ -707,9 +707,7 @@ void logAudio()
   adcStart();
 
   while (1)
-  {
-    if ((*myPin_port & myPin_mask) >= 1) audioData += String(micros()) + "\n";
-    
+  {    
     if (fullHead != fullTail)
     {
       // Get address of block to write.
